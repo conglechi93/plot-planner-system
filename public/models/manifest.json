@@ -1,0 +1,15 @@
+{
+  "car": [
+    "/models/car/bus.glb"
+  ],
+  "common": [],
+  "grass": [
+    "/models/grass/stylized_sakura_tree.glb"
+  ],
+  "house": [
+    "/models/house/charmander_house.glb"
+  ],
+  "tree": [
+    "/models/tree/maple_tree.glb"
+  ]
+}
