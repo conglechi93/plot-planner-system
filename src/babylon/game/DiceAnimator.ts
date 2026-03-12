@@ -24,22 +24,28 @@ import {
 import { getContainer } from '../../utils/containerCache';
 
 // ---------------------------------------------------------------------------
-// Face-up rotations (Euler XYZ) for each die value 1-6.
+// Face-up rotations (Euler XYZ) for each die value 1–6.
 //
-// These assume the standard Blender / three.js die export convention:
-//   face 1 → +Y   face 6 → -Y
-//   face 2 → -Z   face 5 → +Z
-//   face 3 → -X   face 4 → +X
+// Actual dice.glb face layout (confirmed from in-game observation):
+//   face 2 → +Y  (default up)     face 5 → -Y
+//   face 3 → +Z                   face 4 → -Z
+//   face 1 → +X                   face 6 → -X
 //
-// If the actual dice.glb was exported differently, tweak these offsets.
+// To bring a given face to world +Y we rotate the die body:
+//   face 1 (+X → +Y):  Z = +π/2
+//   face 2 (+Y → +Y):  no rotation
+//   face 3 (+Z → +Y):  X = +π/2   ← confirmed: roll 5 displayed as 3 with old mapping
+//   face 4 (-Z → +Y):  X = -π/2
+//   face 5 (-Y → +Y):  X =  π     ← confirmed: roll 6 displayed as 5 with old mapping
+//   face 6 (-X → +Y):  Z = -π/2
 // ---------------------------------------------------------------------------
 const FACE_ROT: Record<number, Vector3> = {
-  1: new Vector3(0,               0, 0),
-  2: new Vector3(-Math.PI / 2,    0, 0),
-  3: new Vector3(0,               0,  Math.PI / 2),
-  4: new Vector3(0,               0, -Math.PI / 2),
-  5: new Vector3( Math.PI / 2,    0, 0),
-  6: new Vector3( Math.PI,        0, 0),
+  1: new Vector3(0,               0,  Math.PI / 2),   // +X → top
+  2: new Vector3(0,               0,  0),               // +Y → already top
+  3: new Vector3( Math.PI / 2,    0,  0),               // +Z → top
+  4: new Vector3(-Math.PI / 2,    0,  0),               // -Z → top
+  5: new Vector3( Math.PI,        0,  0),               // -Y → top
+  6: new Vector3(0,               0, -Math.PI / 2),    // -X → top
 };
 
 const GLB_PATH    = '/models/common/dice.glb';
