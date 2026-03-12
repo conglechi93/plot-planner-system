@@ -1,0 +1,26 @@
+{
+  "houses": [
+    {
+      "type": "Charmander House",
+      "path": "/models/house/charmander_house.glb",
+      "position": {
+        "x": -6.11,
+        "y": 0,
+        "z": -9
+      },
+      "rotation": 0,
+      "scale": 1
+    },
+    {
+      "type": "Maple Tree",
+      "path": "/models/tree/maple_tree.glb",
+      "position": {
+        "x": 4.79,
+        "y": 0,
+        "z": -9.74
+      },
+      "rotation": 0,
+      "scale": 1
+    }
+  ]
+}

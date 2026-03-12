@@ -2,7 +2,9 @@
   "car": [
     "/models/car/bus.glb"
   ],
-  "common": [],
+  "common": [
+    "/models/common/dice.glb"
+  ],
   "grass": [
     "/models/grass/stylized_sakura_tree.glb"
   ],

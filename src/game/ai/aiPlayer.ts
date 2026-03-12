@@ -62,8 +62,8 @@ function cheapestMortgagableSquare(
  */
 function pickBuildTarget(player: Player, state: GameState): number | null {
   for (const idx of player.ownedSquares) {
-    if (canBuildHouse(idx, player.id, state)) return idx;
-    if (canBuildHotel(idx, player.id, state)) return idx;
+    if (canBuildHouse(idx, player.id, state).canBuild) return idx;
+    if (canBuildHotel(idx, player.id, state).canBuild) return idx;
   }
   return null;
 }
@@ -111,7 +111,7 @@ export function pickAIDecision(player: Player, state: GameState): GameEvent {
       const sq = state.squares[buildTarget];
       const houseCost = sq.houseCost ?? 0;
       if (player.money > houseCost * 3) {
-        if (canBuildHotel(buildTarget, player.id, state)) {
+        if (canBuildHotel(buildTarget, player.id, state).canBuild) {
           return { type: 'BUILD_HOTEL', payload: { squareIndex: buildTarget } };
         }
         return { type: 'BUILD_HOUSE', payload: { squareIndex: buildTarget } };
@@ -223,12 +223,12 @@ export function getAIBuildDecisions(
       // Keep a 3× house-cost cash buffer
       if (player.money <= houseCost * 3) continue;
 
-      if (sq.houses === 4 && canBuildHotel(sq.index, player.id, state)) {
+      if (sq.houses === 4 && canBuildHotel(sq.index, player.id, state).canBuild) {
         events.push({ type: 'BUILD_HOTEL', payload: { squareIndex: sq.index } });
         break; // one decision per group per tick
       }
 
-      if (sq.houses < 4 && canBuildHouse(sq.index, player.id, state)) {
+      if (sq.houses < 4 && canBuildHouse(sq.index, player.id, state).canBuild) {
         events.push({ type: 'BUILD_HOUSE', payload: { squareIndex: sq.index } });
         break;
       }

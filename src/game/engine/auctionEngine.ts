@@ -34,9 +34,6 @@ export function startAuction(
   excludePlayerId: string | null,
   state: GameState,
 ): GameState {
-  const square = state.squares[squareIndex];
-  const squareName = square?.name ?? `ô ${squareIndex}`;
-
   const auctionState: AuctionState = {
     squareIndex,
     currentBid: 0,
@@ -46,13 +43,9 @@ export function startAuction(
     isActive: true,
   };
 
-  const initiatorId = excludePlayerId ?? state.players[state.currentPlayerIndex]?.id ?? 'bank';
-
-  return addLog(
-    { ...state, phase: 'auction', auction: auctionState, pendingAction: null },
-    initiatorId,
-    `Đấu giá bắt đầu cho ${squareName}. Giá khởi điểm: ${MIN_OPENING_BID} triệu.`,
-  );
+  // Return state with auction started — no log here; callers are responsible
+  // for logging context-appropriate messages (e.g. "X declined to buy, auction starts").
+  return { ...state, phase: 'auction', auction: auctionState, pendingAction: null };
 }
 
 export function placeBid(playerId: string, bidAmount: number, state: GameState): GameState {
