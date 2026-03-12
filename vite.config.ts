@@ -68,12 +68,17 @@ export default defineConfig({
   server: {
     open: true,
   },
+  optimizeDeps: {
+    include: ['@babylonjs/inspector'],
+  },
   build: {
     target: 'es2020',
+    chunkSizeWarningLimit: 5000,
     rollupOptions: {
       output: {
         manualChunks: {
-          babylonjs: ['@babylonjs/core', '@babylonjs/loaders'],
+          babylonjs:           ['@babylonjs/core', '@babylonjs/loaders'],
+          'babylon-inspector': ['@babylonjs/inspector'],
         },
       },
     },

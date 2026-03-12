@@ -5,13 +5,14 @@ import {
   StandardMaterial,
   Color3,
   AbstractMesh,
-  SceneLoader,
   Vector3,
+  InstantiatedEntries,
 } from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
 import type { HouseInstance } from '../../types/HouseInstance';
 import type { ModelEntry } from '../../types/ModelEntry';
 import { createModelInstance } from '../meshCreators/houseLoader';
+import { getContainer } from '../../utils/containerCache';
 import { snap } from '../../utils/math';
 
 const GRID_SIZE = 1;
@@ -41,6 +42,8 @@ export class PlacementSystem {
   private boxGhost: Mesh | null = null;
   /** Real ghost – hình dạng thật của model, bán trong suốt */
   private realGhost: AbstractMesh | null = null;
+  /** Entries trả về từ instantiateModelsToScene, dùng để dispose sạch */
+  private ghostEntries: InstantiatedEntries | null = null;
 
   private placedCallbacks: PlacedCallback[] = [];
 
@@ -134,42 +137,36 @@ export class PlacementSystem {
     this.boxGhost.material = mat;
   }
 
-  /** Load GLB thật, áp visibility 0.48, thay thế box ghost */
+  /** Load GLB thật qua container cache, áp visibility 0.48, thay thế box ghost */
   private async loadRealGhost(model: ModelEntry): Promise<void> {
     try {
-      const result = await SceneLoader.ImportMeshAsync('', model.path, '', this.scene);
+      const container = await getContainer(this.scene, model.path);
 
-      // Nếu user đã cancel hoặc chọn model khác → dispose và thoát
-      if (!this._isPlacing || this.currentModel?.path !== model.path) {
-        result.meshes.forEach((m) => {
-          m.material?.dispose();
-          m.dispose();
-        });
-        return;
-      }
+      // Nếu user đã cancel hoặc chọn model khác → thoát, không instantiate
+      if (!this._isPlacing || this.currentModel?.path !== model.path) return;
 
-      // Lưu vị trí của box ghost trước khi xoá
-      const savedX = this.boxGhost?.position.x ?? 0;
-      const savedZ = this.boxGhost?.position.z ?? 0;
-
-      this.destroyBoxGhost();
-
-      const root = result.meshes[0];
-      root.name = 'placement_ghost_real';
+      const entries = container.instantiateModelsToScene(undefined, true);
+      const root    = entries.rootNodes[0] as AbstractMesh;
+      root.name     = 'placement_ghost_real';
+      root.rotationQuaternion = null; // force Euler mode
 
       // Áp ghost appearance: không pickable, bán trong suốt
       const applyGhost = (m: AbstractMesh) => {
-        m.isPickable = false;
-        m.visibility = 0.48;
+        m.isPickable  = false;
+        m.visibility  = 0.48;
       };
       applyGhost(root);
       root.getChildMeshes().forEach(applyGhost);
 
-      root.position.x = savedX;
-      root.position.z = savedZ;
-      root.position.y = 0;
+      // Giữ vị trí box ghost trước khi xoá
+      const savedX = this.boxGhost?.position.x ?? 0;
+      const savedZ = this.boxGhost?.position.z ?? 0;
+      this.destroyBoxGhost();
 
-      this.realGhost = root;
+      root.position.set(savedX, 0, savedZ);
+
+      this.realGhost    = root;
+      this.ghostEntries = entries;
     } catch {
       // Load thất bại → giữ box ghost
     }
@@ -185,14 +182,10 @@ export class PlacementSystem {
 
   private destroyAllGhosts(): void {
     this.destroyBoxGhost();
-    if (this.realGhost) {
-      this.realGhost.getChildMeshes().forEach((m) => {
-        m.material?.dispose();
-        m.dispose();
-      });
-      this.realGhost.material?.dispose();
-      this.realGhost.dispose();
-      this.realGhost = null;
+    if (this.ghostEntries) {
+      this.ghostEntries.dispose(); // dispose tất cả instantiated nodes
+      this.ghostEntries = null;
+      this.realGhost    = null;
     }
   }
 }

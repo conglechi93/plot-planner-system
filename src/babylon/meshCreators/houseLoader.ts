@@ -6,13 +6,12 @@ import {
   PBRMaterial,
   Color3,
   Vector3,
-  SceneLoader,
 } from '@babylonjs/core';
-// Đăng ký GLB/GLTF loader (side-effect import)
 import '@babylonjs/loaders/glTF';
 
 import type { HouseInstance } from '../../types/HouseInstance';
 import { generateId } from '../../utils/math';
+import { getContainer } from '../../utils/containerCache';
 
 export type HouseType = 'small' | 'medium';
 
@@ -78,9 +77,12 @@ export async function createModelInstance(
   let rootMesh: AbstractMesh;
 
   try {
-    const result = await SceneLoader.ImportMeshAsync('', glbPath, '', scene);
-    rootMesh = result.meshes[0];
-    rootMesh.name = `model_root_${id}`;
+    const container = await getContainer(scene, glbPath);
+    const entries   = container.instantiateModelsToScene(undefined, true);
+    rootMesh        = entries.rootNodes[0] as AbstractMesh;
+    rootMesh.name   = `model_root_${id}`;
+    // GLB dùng quaternion – null hoá để rotation.y (Euler) hoạt động
+    rootMesh.rotationQuaternion = null;
   } catch {
     // Fallback: hình hộp xám đơn giản
     rootMesh = buildFallbackBox(scene, id);
@@ -132,10 +134,11 @@ export async function createHouseInstance(
   let rootMesh: AbstractMesh;
 
   try {
-    const result = await SceneLoader.ImportMeshAsync('', config.glbPath, '', scene);
-    rootMesh = result.meshes[0];
-    rootMesh.name = `house_root_${id}`;
-    // Áp dụng scale (small = 1.0, medium = 1.5)
+    const container = await getContainer(scene, config.glbPath);
+    const entries   = container.instantiateModelsToScene(undefined, true);
+    rootMesh        = entries.rootNodes[0] as AbstractMesh;
+    rootMesh.name   = `house_root_${id}`;
+    rootMesh.rotationQuaternion = null;
     rootMesh.scaling = new Vector3(config.glbScale, config.glbScale, config.glbScale);
   } catch {
     rootMesh = buildProceduralHouse(scene, id, type);

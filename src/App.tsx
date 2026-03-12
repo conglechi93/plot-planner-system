@@ -34,6 +34,15 @@ function AppInner() {
       </div>
       <PropertyPanel gizmoMode={controls.gizmoMode} setGizmoMode={controls.setGizmoMode} />
       <ModelPickerModal controls={controls} />
+
+      {/* Inspector toggle — bottom left */}
+      <button
+        className={`inspector-btn${controls.isInspectorOpen ? ' active' : ''}`}
+        onClick={controls.toggleInspector}
+        title="Toggle Babylon Inspector"
+      >
+        🔍
+      </button>
     </div>
   );
 }

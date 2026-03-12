@@ -1,19 +1,21 @@
 import { useState, useEffect, useRef } from 'react';
 import type { ModelEntry, ModelsManifest } from '../types/ModelEntry';
 import type { PlannerControls } from '../hooks/usePlanner';
-import { ModelPreview } from './ModelPreview';
+import { ModelCardThumb } from './ModelCardThumb';
+import { ModelCardTooltip } from './ModelCardTooltip';
+import './ModelPickerModal.css';
 
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 12;
 
 const CATEGORY_ICONS: Record<string, string> = {
-  house:      '🏠',
-  grass:      '🌿',
-  tree:       '🌲',
-  car:        '🚗',
-  common:     '📦',
-  furniture:  '🪑',
-  road:       '🛣️',
-  water:      '💧',
+  house:     '🏠',
+  grass:     '🌿',
+  tree:      '🌲',
+  car:       '🚗',
+  common:    '📦',
+  furniture: '🪑',
+  road:      '🛣️',
+  water:     '💧',
 };
 
 function getCategoryIcon(cat: string): string {
@@ -27,6 +29,12 @@ function prettifyName(filename: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
+interface TooltipInfo {
+  path: string;
+  name: string;
+  rect: DOMRect;
+}
+
 interface Props {
   controls: PlannerControls;
 }
@@ -34,19 +42,19 @@ interface Props {
 export function ModelPickerModal({ controls }: Props) {
   const { isPickerOpen, closePicker, pickerCallback } = controls;
 
-  const [manifest, setManifest]         = useState<ModelsManifest>({});
-  const [categories, setCategories]     = useState<string[]>([]);
+  const [manifest, setManifest]             = useState<ModelsManifest>({});
+  const [categories, setCategories]         = useState<string[]>([]);
   const [activeCategory, setActiveCategory] = useState('house');
-  const [currentPage, setCurrentPage]   = useState(1);
-  const [loading, setLoading]           = useState(false);
-  const [hoveredPath, setHoveredPath]   = useState<string | null>(null);
-  const loaded = useRef(false);
+  const [currentPage, setCurrentPage]       = useState(1);
+  const [loading, setLoading]               = useState(false);
+  const [tooltip, setTooltip]               = useState<TooltipInfo | null>(null);
+
+  const loaded     = useRef(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Lazy-load manifest on first open
   useEffect(() => {
     if (!isPickerOpen || loaded.current) return;
-
     setLoading(true);
     fetch('/models/manifest.json')
       .then((res) => {
@@ -56,7 +64,7 @@ export function ModelPickerModal({ controls }: Props) {
       .then((data) => {
         const cats = Object.keys(data).sort((a, b) => {
           if (a === 'house') return -1;
-          if (b === 'house') return 1;
+          if (b === 'house') return  1;
           return a.localeCompare(b);
         });
         setManifest(data);
@@ -64,9 +72,7 @@ export function ModelPickerModal({ controls }: Props) {
         setActiveCategory(cats[0] ?? 'house');
         loaded.current = true;
       })
-      .catch((err) => {
-        console.error('[ModelPicker] Failed to load manifest:', err);
-      })
+      .catch((err) => console.error('[ModelPicker] Failed to load manifest:', err))
       .finally(() => setLoading(false));
   }, [isPickerOpen]);
 
@@ -84,13 +90,14 @@ export function ModelPickerModal({ controls }: Props) {
 
   function getEntries(category: string): ModelEntry[] {
     return (manifest[category] ?? []).map((p) => ({
-      name:     prettifyName(p.split('/').pop() ?? p),
-      path:     p,
+      name: prettifyName(p.split('/').pop() ?? p),
+      path: p,
       category,
     }));
   }
 
   function handleSelect(entry: ModelEntry) {
+    clearHover();
     closePicker();
     pickerCallback.current?.(entry);
   }
@@ -102,16 +109,24 @@ export function ModelPickerModal({ controls }: Props) {
   function handleTabClick(cat: string) {
     setActiveCategory(cat);
     setCurrentPage(1);
-    setHoveredPath(null);
+    clearHover();
   }
 
-  function handleCardHover(path: string) {
+  function handleCardEnter(entry: ModelEntry, e: React.MouseEvent<HTMLButtonElement>) {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
-    hoverTimer.current = setTimeout(() => setHoveredPath(path), 220);
+    const rect = e.currentTarget.getBoundingClientRect();
+    hoverTimer.current = setTimeout(() => {
+      setTooltip({ path: entry.path, name: entry.name, rect });
+    }, 180);
   }
 
   function handleCardLeave() {
+    clearHover();
+  }
+
+  function clearHover() {
     if (hoverTimer.current) clearTimeout(hoverTimer.current);
+    setTooltip(null);
   }
 
   const entries    = getEntries(activeCategory);
@@ -123,101 +138,104 @@ export function ModelPickerModal({ controls }: Props) {
   const endIdx     = Math.min(start + PAGE_SIZE, total);
 
   return (
-    <div
-      className="mp-overlay visible"
-      id="modelPickerOverlay"
-      onClick={handleOverlayClick}
-    >
-      <div className="mp-panel mp-panel-wide">
+    <div className="mp-overlay visible" onClick={handleOverlayClick}>
+      <div className="mp-panel">
+
         {/* Header */}
         <div className="mp-header">
           <span className="mp-title">📦 Chọn Model</span>
           <button className="mp-close-btn" onClick={closePicker}>✕</button>
         </div>
 
-        <div className="mp-body-row">
-          {/* Left: tabs + grid + footer */}
-          <div className="mp-main">
-            {/* Tabs */}
-            <div className="mp-tabs" id="mpTabs">
-              {loading ? (
-                <span className="mp-no-tabs">Đang tải danh sách model…</span>
-              ) : categories.length === 0 ? (
-                <span className="mp-no-tabs">Không tìm thấy thư mục nào</span>
-              ) : (
-                categories.map((cat) => {
-                  const count = manifest[cat]?.length ?? 0;
-                  return (
-                    <button
-                      key={cat}
-                      className={`mp-tab${cat === activeCategory ? ' active' : ''}`}
-                      onClick={() => handleTabClick(cat)}
-                    >
-                      {getCategoryIcon(cat)}{' '}
-                      <span className="mp-tab-label">{cat}</span>
-                      <span className="mp-tab-count">{count}</span>
-                    </button>
-                  );
-                })
-              )}
-            </div>
+        {/* Tabs */}
+        <div className="mp-tabs">
+          {loading ? (
+            <span className="mp-no-tabs">Đang tải danh sách model…</span>
+          ) : categories.length === 0 ? (
+            <span className="mp-no-tabs">Không tìm thấy thư mục nào</span>
+          ) : (
+            categories.map((cat) => {
+              const count = manifest[cat]?.length ?? 0;
+              return (
+                <button
+                  key={cat}
+                  className={`mp-tab${cat === activeCategory ? ' active' : ''}`}
+                  onClick={() => handleTabClick(cat)}
+                >
+                  {getCategoryIcon(cat)}{' '}
+                  <span className="mp-tab-label">{cat}</span>
+                  <span className="mp-tab-count">{count}</span>
+                </button>
+              );
+            })
+          )}
+        </div>
 
-            {/* Grid */}
-            <div className="mp-body">
-              <div className="mp-grid" id="mpGrid">
-                {loading ? (
-                  <div className="mp-empty">Đang tải danh sách model…</div>
-                ) : pageItems.length === 0 ? (
-                  <div className="mp-empty">
-                    📂 Chưa có model nào trong thư mục <strong>{activeCategory}</strong>
+        {/* Grid */}
+        <div className="mp-body">
+          <div className="mp-grid">
+            {loading ? (
+              <div className="mp-empty">Đang tải danh sách model…</div>
+            ) : pageItems.length === 0 ? (
+              <div className="mp-empty">
+                📂 Chưa có model nào trong thư mục <strong>{activeCategory}</strong>
+              </div>
+            ) : (
+              pageItems.map((entry) => (
+                <button
+                  key={entry.path}
+                  className={`mp-card${tooltip?.path === entry.path ? ' hovered' : ''}`}
+                  title={entry.path}
+                  onClick={() => handleSelect(entry)}
+                  onMouseEnter={(e) => handleCardEnter(entry, e)}
+                  onMouseLeave={handleCardLeave}
+                >
+                  <div className="mp-card-thumb">
+                    <ModelCardThumb
+                      path={entry.path}
+                      fallbackIcon={getCategoryIcon(entry.category)}
+                    />
                   </div>
-                ) : (
-                  pageItems.map((entry) => (
-                    <button
-                      key={entry.path}
-                      className={`mp-card${hoveredPath === entry.path ? ' hovered' : ''}`}
-                      title={entry.path}
-                      onClick={() => handleSelect(entry)}
-                      onMouseEnter={() => handleCardHover(entry.path)}
-                      onMouseLeave={handleCardLeave}
-                    >
-                      <div className="mp-card-thumb">{getCategoryIcon(entry.category)}</div>
-                      <div className="mp-card-name">{entry.name}</div>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="mp-footer">
-              <span className="mp-count" id="mpCount">
-                {total === 0 ? '0 model' : `${start + 1}–${endIdx} / ${total} model`}
-              </span>
-              <div className="mp-pagination" id="mpPagination">
-                {totalPages > 1 && (
-                  <>
-                    <button
-                      className="mp-page-btn"
-                      disabled={page === 1}
-                      onClick={() => setCurrentPage((p) => p - 1)}
-                    >‹</button>
-                    <span className="mp-page-info">Trang {page} / {totalPages}</span>
-                    <button
-                      className="mp-page-btn"
-                      disabled={page === totalPages}
-                      onClick={() => setCurrentPage((p) => p + 1)}
-                    >›</button>
-                  </>
-                )}
-              </div>
-            </div>
+                  <div className="mp-card-name">{entry.name}</div>
+                </button>
+              ))
+            )}
           </div>
+        </div>
 
-          {/* Right: 3D preview */}
-          <ModelPreview path={hoveredPath} />
+        {/* Footer */}
+        <div className="mp-footer">
+          <span className="mp-count">
+            {total === 0 ? '0 model' : `${start + 1}–${endIdx} / ${total} model`}
+          </span>
+          <div className="mp-pagination">
+            {totalPages > 1 && (
+              <>
+                <button
+                  className="mp-page-btn"
+                  disabled={page === 1}
+                  onClick={() => setCurrentPage((p) => p - 1)}
+                >‹</button>
+                <span className="mp-page-info">Trang {page} / {totalPages}</span>
+                <button
+                  className="mp-page-btn"
+                  disabled={page === totalPages}
+                  onClick={() => setCurrentPage((p) => p + 1)}
+                >›</button>
+              </>
+            )}
+          </div>
         </div>
       </div>
+
+      {/* Floating tooltip — rendered inside overlay so z-index works */}
+      {tooltip && (
+        <ModelCardTooltip
+          path={tooltip.path}
+          name={tooltip.name}
+          anchorRect={tooltip.rect}
+        />
+      )}
     </div>
   );
 }

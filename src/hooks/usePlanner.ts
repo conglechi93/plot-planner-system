@@ -6,6 +6,7 @@ import { createModelInstance } from '../babylon/meshCreators/houseLoader';
 import type { HouseInstance, LayoutData } from '../types/HouseInstance';
 import type { ModelEntry } from '../types/ModelEntry';
 import { toDegrees, toRadians } from '../utils/math';
+import { useInspector } from './useInspector';
 
 export type GizmoMode = 'position' | 'rotation' | 'scale' | null;
 
@@ -23,6 +24,8 @@ export interface PlannerControls {
   pickerCallback: React.MutableRefObject<((model: ModelEntry) => void) | null>;
   gizmoMode: GizmoMode;
   setGizmoMode: (mode: GizmoMode) => void;
+  toggleInspector: () => void;
+  isInspectorOpen: boolean;
 }
 
 interface UsePlannerOptions {
@@ -44,11 +47,15 @@ export function usePlanner(
   }, [options.onSelectChange]);
 
   // ── React state (drives UI re-renders) ──
-  const [isPlacing, setIsPlacing]     = useState(false);
-  const [houseCount, setHouseCount]   = useState(0);
-  const [status, setStatus]           = useState('Click "Add Model" to start placing');
+  const [isPlacing, setIsPlacing]       = useState(false);
+  const [houseCount, setHouseCount]     = useState(0);
+  const [status, setStatus]             = useState('Click "Add Model" to start placing');
   const [isPickerOpen, setIsPickerOpen] = useState(false);
-  const [gizmoMode, setGizmoModeState] = useState<GizmoMode>('position');
+  const [gizmoMode, setGizmoModeState]  = useState<GizmoMode>('position');
+
+  const { toggleInspector, isInspectorOpen } = useInspector(
+    () => sceneRef.current?.scene ?? null
+  );
 
   // Picker callback stored in ref so it is always current
   const pickerCallback = useRef<((model: ModelEntry) => void) | null>(null);
@@ -81,15 +88,16 @@ export function usePlanner(
 
   const exportLayout = useCallback((): LayoutData => {
     return {
-      houses: Array.from(housesRef.current.values()).map((house) => ({
-        type: house.type,
-        path: house.path,
+    houses: Array.from(housesRef.current.values()).map((house) => ({
+        type:     house.type,
+        path:     house.path,
         position: {
           x: Math.round(house.mesh.position.x * 100) / 100,
           y: Math.round(house.mesh.position.y * 100) / 100,
           z: Math.round(house.mesh.position.z * 100) / 100,
         },
         rotation: Math.round(toDegrees(house.mesh.rotation.y)),
+        scale:    Math.round(house.mesh.scaling.x * 1000) / 1000,
       })),
     };
   }, []);
@@ -113,13 +121,26 @@ export function usePlanner(
         return;
       }
 
+      // ── Xóa toàn bộ models hiện tại trước khi load layout mới ──
+      setup.selectionSystem.select(null);
+      setup.gizmoManager.attachToMesh(null);
+      for (const house of housesRef.current.values()) {
+        house.mesh.getChildMeshes().forEach((m) => { m.material?.dispose(); m.dispose(); });
+        house.mesh.material?.dispose();
+        house.mesh.dispose();
+      }
+      housesRef.current.clear();
+      setHouseCount(0);
+
       setStatus(`Đang import ${withPath.length} model…`);
 
       for (const entry of withPath) {
         const position = new Vector3(entry.position.x, entry.position.y, entry.position.z);
         const instance = await createModelInstance(setup.scene, entry.path!, entry.type, position);
         instance.mesh.rotation.y = toRadians(entry.rotation);
-        instance.rotation = instance.mesh.rotation;
+        instance.rotation        = instance.mesh.rotation;
+        const s = entry.scale ?? 1;
+        instance.mesh.scaling.setAll(s);
 
         [instance.mesh, ...instance.mesh.getChildMeshes()].forEach((m) => {
           setup.shadowGen.addShadowCaster(m);
@@ -156,7 +177,6 @@ export function usePlanner(
       gizmoManager.attachToMesh(null);
     }
   }, []);
-
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -325,5 +345,7 @@ export function usePlanner(
     pickerCallback,
     gizmoMode,
     setGizmoMode,
+    toggleInspector,
+    isInspectorOpen,
   };
 }

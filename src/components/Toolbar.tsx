@@ -15,16 +15,34 @@ export function Toolbar({ controls }: Props) {
     });
   }
 
-  function handleSave() {
+  async function handleSave() {
     const layout = exportLayout();
-    if (layout.houses.length === 0) {
-      return;
+    if (layout.houses.length === 0) return;
+
+    const json = JSON.stringify(layout, null, 2);
+
+    // File System Access API — mở dialog chọn folder + tên file
+    if ('showSaveFilePicker' in window) {
+      try {
+        const picker = window.showSaveFilePicker as (opts: object) => Promise<FileSystemFileHandle>;
+        const handle = await picker({
+          suggestedName: 'plot-layout.json',
+          types: [{ description: 'JSON Layout', accept: { 'application/json': ['.json'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(json);
+        await writable.close();
+        return;
+      } catch (err) {
+        if ((err as DOMException).name === 'AbortError') return; // user nhấn Cancel
+      }
     }
-    console.log('[PlotPlanner] Layout JSON:', JSON.stringify(layout, null, 2));
-    const blob = new Blob([JSON.stringify(layout, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+
+    // Fallback cho Firefox / Safari
+    const blob   = new Blob([json], { type: 'application/json' });
+    const url    = URL.createObjectURL(blob);
     const anchor = document.createElement('a');
-    anchor.href = url;
+    anchor.href     = url;
     anchor.download = 'plot-layout.json';
     anchor.click();
     URL.revokeObjectURL(url);

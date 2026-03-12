@@ -27,7 +27,6 @@ export function createSceneSetup(canvas: HTMLCanvasElement): SceneSetup {
   const engine = createEngine(canvas);
   const scene = new Scene(engine);
 
-  // Sky blue background
   scene.clearColor = new Color4(0.44, 0.70, 0.92, 1.0);
 
   createCamera(scene, canvas);
@@ -38,11 +37,10 @@ export function createSceneSetup(canvas: HTMLCanvasElement): SceneSetup {
   const transformSystem = new TransformSystem();
   const placementSystem = new PlacementSystem(scene, ground);
 
-  // GizmoManager – position arrows only; rotation handled by R key
   const gizmoManager = new GizmoManager(scene);
-  gizmoManager.positionGizmoEnabled = true;
-  gizmoManager.rotationGizmoEnabled = false;
-  gizmoManager.scaleGizmoEnabled = false;
+  gizmoManager.positionGizmoEnabled    = true;
+  gizmoManager.rotationGizmoEnabled    = false;
+  gizmoManager.scaleGizmoEnabled       = false;
   gizmoManager.boundingBoxGizmoEnabled = false;
   gizmoManager.usePointerToAttachGizmos = false;
 

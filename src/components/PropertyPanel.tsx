@@ -85,7 +85,11 @@ export function PropertyPanel({ gizmoMode, setGizmoMode }: Props) {
       const m = selectedHouse.mesh;
       setPosX(Math.round(m.position.x * 10) / 10);
       setPosZ(Math.round(m.position.z * 10) / 10);
-      setRotDeg(Math.round(((toDegrees(m.rotation.y) % 360) + 360) % 360));
+      setRotDeg((prev) => {
+        const synced = Math.round(((toDegrees(m.rotation.y) % 360) + 360) % 360);
+        // 360° và 0° là cùng một góc — không reset về 0 khi user đang ở 360
+        return (prev === 360 && synced === 0) ? 360 : synced;
+      });
       setScale(Math.round(m.scaling.x * 100) / 100);
     };
     sync();
@@ -157,11 +161,51 @@ export function PropertyPanel({ gizmoMode, setGizmoMode }: Props) {
     });
   }
 
-  const GIZMO_BTNS: { mode: GizmoMode; icon: string; tip: string }[] = [
-    { mode: 'position', icon: '↕️', tip: 'Move (kéo mũi tên)' },
-    { mode: 'rotation', icon: '🔄', tip: 'Rotate (kéo vòng)' },
-    { mode: 'scale',    icon: '⤡',  tip: 'Scale (kéo tay cầm)' },
-    { mode: null,       icon: '⊘',  tip: 'Tắt gizmo' },
+  const GIZMO_BTNS: { mode: GizmoMode; icon: React.ReactNode; tip: string }[] = [
+    {
+      mode: 'position',
+      tip: 'Move (kéo mũi tên)',
+      icon: (
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M9 2v14M2 9h14" />
+          <path d="M9 2L6.5 5M9 2L11.5 5" />
+          <path d="M9 16L6.5 13M9 16L11.5 13" />
+          <path d="M2 9L5 6.5M2 9L5 11.5" />
+          <path d="M16 9L13 6.5M16 9L13 11.5" />
+        </svg>
+      ),
+    },
+    {
+      mode: 'rotation',
+      tip: 'Rotate (kéo vòng)',
+      icon: (
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M14.5 9A5.5 5.5 0 1 1 9 3.5" />
+          <path d="M9 1l4 2.5-4 2.5" />
+        </svg>
+      ),
+    },
+    {
+      mode: 'scale',
+      tip: 'Scale (kéo tay cầm)',
+      icon: (
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M3 15L15 3" />
+          <path d="M10 3h5v5" />
+          <path d="M8 15H3v-5" />
+        </svg>
+      ),
+    },
+    {
+      mode: null,
+      tip: 'Tắt gizmo',
+      icon: (
+        <svg viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+          <circle cx="9" cy="9" r="6" />
+          <path d="M5.5 5.5l7 7" />
+        </svg>
+      ),
+    },
   ];
 
   const partBtns: { key: PartKey; label: string }[] = [
@@ -245,7 +289,7 @@ export function PropertyPanel({ gizmoMode, setGizmoMode }: Props) {
               <input
                 type="range"
                 className="pp-slider"
-                min={0} max={359} step={1}
+                min={0} max={360} step={1}
                 value={rotDeg}
                 onChange={(e) => applyRot(+e.target.value)}
               />

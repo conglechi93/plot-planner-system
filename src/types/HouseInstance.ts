@@ -29,5 +29,7 @@ export interface LayoutData {
     position: { x: number; y: number; z: number };
     /** Góc xoay quanh trục Y, tính bằng độ (degrees) */
     rotation: number;
+    /** Scale đồng đều trên cả 3 trục */
+    scale: number;
   }>;
 }
