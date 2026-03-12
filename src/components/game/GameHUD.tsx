@@ -137,6 +137,11 @@ export function GameHUD({ engine }: Props): React.JSX.Element {
     declineProperty();
   }
 
+  /** Tax squares: dispatch PAY_RENT — the reducer handles pay_tax inside it. */
+  function handlePayTax(): void {
+    engine.payRent();
+  }
+
   // ── Card confirm ─────────────────────────────────────────────────────────────
 
   function handleCardConfirm(): void {
@@ -175,6 +180,7 @@ export function GameHUD({ engine }: Props): React.JSX.Element {
           currentPlayer={currentPlayer}
           onBuy={handleBuy}
           onDecline={handleDecline}
+          onPayTax={handlePayTax}
         />
       )}
 

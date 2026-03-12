@@ -173,6 +173,8 @@ interface Props {
   currentPlayer: Player | null;
   onBuy: () => void;
   onDecline: () => void;
+  /** Called when player confirms paying tax. Dispatches PAY_RENT internally. */
+  onPayTax: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -183,6 +185,7 @@ export function ActionDialog({
   currentPlayer,
   onBuy,
   onDecline,
+  onPayTax,
 }: Props): React.JSX.Element | null {
   if (!pendingAction) return null;
 
@@ -279,7 +282,7 @@ export function ActionDialog({
             </div>
           </div>
 
-          <button style={confirmBtnStyle} onClick={onDecline}>
+          <button style={confirmBtnStyle} onClick={onPayTax}>
             ĐÓNG THUẾ {formatMoney(amount)}
           </button>
         </div>
