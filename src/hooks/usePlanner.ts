@@ -26,6 +26,8 @@ export interface PlannerControls {
   setGizmoMode: (mode: GizmoMode) => void;
   toggleInspector: () => void;
   isInspectorOpen: boolean;
+  /** Returns the current Babylon Scene (null before scene is initialised). */
+  getScene: () => import('@babylonjs/core').Scene | null;
 }
 
 interface UsePlannerOptions {
@@ -347,5 +349,6 @@ export function usePlanner(
     setGizmoMode,
     toggleInspector,
     isInspectorOpen,
+    getScene: () => sceneRef.current?.scene ?? null,
   };
 }
