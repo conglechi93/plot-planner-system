@@ -15,17 +15,17 @@
 //        │  [10]   9  8 ... 1  [0]   │
 //   (-50,_,-50) ──────────────────── (+50,_,-50)
 //
-// Corner tiles (20×20 units, centred at ±40 on both axes):
-//   index  0 → bottom-right (+40, 0, -40)
-//   index 10 → bottom-left  (-40, 0, -40)
-//   index 20 → top-left     (-40, 0, +40)
-//   index 30 → top-right    (+40, 0, +40)
+// Corner tiles (16×16 units, centred at ±42 on both axes):
+//   index  0 → bottom-right (+42, 0, -42)
+//   index 10 → bottom-left  (-42, 0, -42)
+//   index 20 → top-left     (-42, 0, +42)
+//   index 30 → top-right    (+42, 0, +42)
 //
-// Regular tiles (≈6.667 × 20 units, TILEWIDTH = 60/9):
-//   Bottom edge  (1–9)  : z = -40, x from +26.667… to -26.667… (right→left)
-//   Left edge   (11–19) : x = -40, z from -26.667… to +26.667… (bottom→top)
-//   Top edge    (21–29) : z = +40, x from -26.667… to +26.667… (left→right)
-//   Right edge  (31–39) : x = +40, z from +26.667… to -26.667… (top→bottom)
+// Regular tiles (≈7.556 × 14 units, TILEWIDTH = 68/9):
+//   Bottom edge  (1–9)  : z = -43, x from +30.22… to -30.22… (right→left)
+//   Left edge   (11–19) : x = -43, z from -30.22… to +30.22… (bottom→top)
+//   Top edge    (21–29) : z = +43, x from -30.22… to +30.22… (left→right)
+//   Right edge  (31–39) : x = +43, z from +30.22… to -30.22… (top→bottom)
 //
 // rotationY values make tile labels face OUTWARD from the board centre:
 //   Bottom tiles  → rotationY = 0            (label faces -Z / south)
@@ -51,12 +51,15 @@ export interface TileTransform {
 // Constants
 // ---------------------------------------------------------------------------
 
-const EDGE_POS   = 40;          // Distance from origin to tile centre (⊥ to edge)
-const CORNER_POS = 40;          // Distance from origin to corner centre (both axes)
-const CORNER_SIZE    = 20;      // Corner tile footprint: 20×20
-const REGULAR_WIDTH  = 60 / 9; // ≈ 6.6667 — 9 tiles filling 60 units between corners
-const REGULAR_DEPTH  = 20;     // All regular tiles are 20 units deep
-const TILE_Y         = 0.02;   // Slightly above ground plane
+const EDGE_POS   = 43;          // Regular tile centre distance from origin (⊥ to edge)
+const CORNER_POS = 42;          // Corner tile centre distance from origin (both axes)
+const CORNER_SIZE    = 16;      // Corner tile footprint: 16×16  (outer edge sits at ±50)
+const REGULAR_DEPTH  = 14;     // Regular tile depth into board  (outer edge sits at ±50)
+
+// Gap between corner inner edges = CORNER_POS - CORNER_SIZE/2 = 42 - 8 = 34, both sides
+const REGULAR_SPAN_HALF = CORNER_POS - CORNER_SIZE / 2;        // 34 units from centre
+const REGULAR_WIDTH     = (REGULAR_SPAN_HALF * 2) / 9;         // 68/9 ≈ 7.556 units
+const TILE_Y            = 0.02;   // Slightly above ground plane
 
 // ---------------------------------------------------------------------------
 // Core computation
@@ -75,7 +78,7 @@ export function computeTileTransforms(): TileTransform[] {
   out[0] = {
     index: 0,
     position: { x: CORNER_POS, y: TILE_Y, z: -CORNER_POS },
-    rotationY: 0,             // axis-aligned, label faces -Z (south / outward)
+    rotationY: 0,
     tileWidth: CORNER_SIZE,
     tileDepth: CORNER_SIZE,
     isCorner: true,
@@ -85,7 +88,7 @@ export function computeTileTransforms(): TileTransform[] {
   out[10] = {
     index: 10,
     position: { x: -CORNER_POS, y: TILE_Y, z: -CORNER_POS },
-    rotationY: 0,             // axis-aligned
+    rotationY: 0,
     tileWidth: CORNER_SIZE,
     tileDepth: CORNER_SIZE,
     isCorner: true,
@@ -95,7 +98,7 @@ export function computeTileTransforms(): TileTransform[] {
   out[20] = {
     index: 20,
     position: { x: -CORNER_POS, y: TILE_Y, z: CORNER_POS },
-    rotationY: Math.PI,       // label faces +Z (north / outward)
+    rotationY: Math.PI,
     tileWidth: CORNER_SIZE,
     tileDepth: CORNER_SIZE,
     isCorner: true,
@@ -105,18 +108,17 @@ export function computeTileTransforms(): TileTransform[] {
   out[30] = {
     index: 30,
     position: { x: CORNER_POS, y: TILE_Y, z: CORNER_POS },
-    rotationY: Math.PI,       // axis-aligned, label faces south
+    rotationY: Math.PI,
     tileWidth: CORNER_SIZE,
     tileDepth: CORNER_SIZE,
     isCorner: true,
   };
 
   // ── Bottom edge — indices 1–9 ─────────────────────────────────────────────
-  // Tiles travel from corner-0 (x=+40) toward corner-10 (x=-40), i.e. right→left.
-  // Centre of slot k (0-based):  x = +30 - REGULAR_WIDTH*(k+0.5)
-  //   k=0 → x ≈ +26.667   k=8 → x ≈ -26.667
+  // Tiles travel from corner-0 (x=+42) toward corner-10 (x=-42), i.e. right→left.
+  // Centre of slot k (0-based):  x = +REGULAR_SPAN_HALF - REGULAR_WIDTH*(k+0.5)
   for (let k = 0; k < 9; k++) {
-    const x = 30 - REGULAR_WIDTH * (k + 0.5);
+    const x = REGULAR_SPAN_HALF - REGULAR_WIDTH * (k + 0.5);
     out[1 + k] = {
       index: 1 + k,
       position: { x, y: TILE_Y, z: -EDGE_POS },
@@ -128,10 +130,10 @@ export function computeTileTransforms(): TileTransform[] {
   }
 
   // ── Left edge — indices 11–19 ─────────────────────────────────────────────
-  // Tiles travel from corner-10 (z=-40) toward corner-20 (z=+40), i.e. bottom→top.
-  // Centre of slot k (0-based):  z = -30 + REGULAR_WIDTH*(k+0.5)
+  // Tiles travel from corner-10 (z=-42) toward corner-20 (z=+42), i.e. bottom→top.
+  // Centre of slot k (0-based):  z = -REGULAR_SPAN_HALF + REGULAR_WIDTH*(k+0.5)
   for (let k = 0; k < 9; k++) {
-    const z = -30 + REGULAR_WIDTH * (k + 0.5);
+    const z = -REGULAR_SPAN_HALF + REGULAR_WIDTH * (k + 0.5);
     out[11 + k] = {
       index: 11 + k,
       position: { x: -EDGE_POS, y: TILE_Y, z },
@@ -143,10 +145,10 @@ export function computeTileTransforms(): TileTransform[] {
   }
 
   // ── Top edge — indices 21–29 ──────────────────────────────────────────────
-  // Tiles travel from corner-20 (x=-40) toward corner-30 (x=+40), i.e. left→right.
-  // Centre of slot k (0-based):  x = -30 + REGULAR_WIDTH*(k+0.5)
+  // Tiles travel from corner-20 (x=-42) toward corner-30 (x=+42), i.e. left→right.
+  // Centre of slot k (0-based):  x = -REGULAR_SPAN_HALF + REGULAR_WIDTH*(k+0.5)
   for (let k = 0; k < 9; k++) {
-    const x = -30 + REGULAR_WIDTH * (k + 0.5);
+    const x = -REGULAR_SPAN_HALF + REGULAR_WIDTH * (k + 0.5);
     out[21 + k] = {
       index: 21 + k,
       position: { x, y: TILE_Y, z: EDGE_POS },
@@ -158,10 +160,10 @@ export function computeTileTransforms(): TileTransform[] {
   }
 
   // ── Right edge — indices 31–39 ────────────────────────────────────────────
-  // Tiles travel from corner-30 (z=+40) toward corner-0 (z=-40), i.e. top→bottom.
-  // Centre of slot k (0-based):  z = +30 - REGULAR_WIDTH*(k+0.5)
+  // Tiles travel from corner-30 (z=+42) toward corner-0 (z=-42), i.e. top→bottom.
+  // Centre of slot k (0-based):  z = +REGULAR_SPAN_HALF - REGULAR_WIDTH*(k+0.5)
   for (let k = 0; k < 9; k++) {
-    const z = 30 - REGULAR_WIDTH * (k + 0.5);
+    const z = REGULAR_SPAN_HALF - REGULAR_WIDTH * (k + 0.5);
     out[31 + k] = {
       index: 31 + k,
       position: { x: EDGE_POS, y: TILE_Y, z },
