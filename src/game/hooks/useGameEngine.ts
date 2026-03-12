@@ -420,6 +420,34 @@ export function useGameEngine(): UseGameEngineReturn {
     if (!state || !isActiveRef.current) return;
     if (state.phase === 'game_over' || state.phase === 'moving_token') return;
 
+    // ── Auction phase: ALL active AI players participate, not just currentPlayer ─
+    //
+    // During an auction, every player (human and AI) can bid or pass.
+    // We find the NEXT AI who hasn't passed yet and isn't the current high bidder
+    // (so they don't immediately re-bid after their own bid landed), then drive
+    // them one decision at a time with the normal AI delay.
+    if (state.phase === 'auction' && state.auction?.isActive) {
+      const auction = state.auction;
+      const nextAI = state.players.find(
+        p =>
+          p.isAI &&
+          !p.isBankrupt &&
+          !auction.passedPlayers.includes(p.id) &&
+          p.id !== auction.currentBidderId,   // don't let the highest bidder re-bid immediately
+      );
+
+      if (!nextAI) return; // Human needs to act (or auction complete)
+
+      if (aiTimerRef.current !== null) clearTimeout(aiTimerRef.current);
+      aiTimerRef.current = setTimeout(() => {
+        aiTimerRef.current = null;
+        if (!isActiveRef.current) return;
+        dispatch(pickDecision(nextAI, state));
+      }, AI_ACTION_DELAY);
+
+      return; // Do NOT fall through to the standard current-player check
+    }
+
     // ── All other phases: current player must be AI ───────────────────────────
     const currentPlayer = state.players[state.currentPlayerIndex];
     if (!currentPlayer || !currentPlayer.isAI || currentPlayer.isBankrupt) return;

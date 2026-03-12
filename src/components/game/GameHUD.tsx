@@ -2,6 +2,7 @@ import React from 'react';
 import { PlayerPanel } from './PlayerPanel';
 import { DicePanel } from './DicePanel';
 import { ActionDialog } from './ActionDialog';
+import { AuctionModal } from './AuctionModal';
 import { CardDrawModal } from './CardDrawModal';
 import { BuildPanel } from './BuildPanel';
 import { GameLog } from './GameLog';
@@ -142,6 +143,18 @@ export function GameHUD({ engine }: Props): React.JSX.Element {
     engine.payRent();
   }
 
+  // ── Auction handlers ─────────────────────────────────────────────────────────
+
+  function handleBid(amount: number): void {
+    if (!humanPlayer) return;
+    engine.dispatch({ type: 'PLACE_BID', payload: { playerId: humanPlayer.id, amount } });
+  }
+
+  function handlePassAuction(): void {
+    if (!humanPlayer) return;
+    engine.dispatch({ type: 'PASS_AUCTION', payload: { playerId: humanPlayer.id } });
+  }
+
   // ── Card confirm ─────────────────────────────────────────────────────────────
 
   function handleCardConfirm(): void {
@@ -170,6 +183,17 @@ export function GameHUD({ engine }: Props): React.JSX.Element {
 
       {/* ── Game log (bottom-right) ─────────────────────────────────────── */}
       <GameLog log={log} players={players} />
+
+      {/* ── Auction modal ────────────────────────────────────────────────── */}
+      {/* Shown when phase === 'auction', for ALL players (human bids here). */}
+      <AuctionModal
+        auction={state.auction}
+        players={players}
+        squares={squares}
+        humanPlayer={humanPlayer}
+        onBid={handleBid}
+        onPass={handlePassAuction}
+      />
 
       {/* ── Action dialog: buy / tax / rent ─────────────────────────────── */}
       {/* Only show AFTER the token has finished walking to its destination. */}
