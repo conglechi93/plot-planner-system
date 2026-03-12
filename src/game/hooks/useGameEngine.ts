@@ -126,6 +126,18 @@ export function useGameEngine(): UseGameEngineReturn {
   const aiTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
+   * Snapshot of the camera's resting state taken the moment startGame() is
+   * called.  Used by panCameraHome() to smoothly return to the overview after
+   * token movement ends.
+   */
+  const cameraHomeRef = useRef<{
+    target: Vector3;
+    alpha:  number;
+    beta:   number;
+    radius: number;
+  } | null>(null);
+
+  /**
    * Stores the player + fromTile right before a ROLL_DICE / ROLL_FOR_JAIL
    * dispatch so the scene-sync effect can detect a new movement and animate it.
    * Also holds diceTotal so we can distinguish normal moves from specials
@@ -175,6 +187,18 @@ export function useGameEngine(): UseGameEngineReturn {
 
       // Prime the dice asset cache in the background (non-blocking).
       void diceAnimator.preload();
+
+      // Snapshot the camera's current resting position so we can return to it
+      // after every token walk animation.
+      const cam = scene.activeCamera;
+      if (cam instanceof ArcRotateCamera) {
+        cameraHomeRef.current = {
+          target: cam.target.clone(),
+          alpha:  cam.alpha,
+          beta:   cam.beta,
+          radius: cam.radius,
+        };
+      }
 
       // Create initial game state with one human player + N AI opponents.
       const strategies: AIStrategy[] = Array.from({ length: aiCount }, (_, i) => {
@@ -263,6 +287,42 @@ export function useGameEngine(): UseGameEngineReturn {
       8,                                       // total frames ≈ 133 ms
       camera.target.clone(),
       targetPos,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+  }, []);
+
+  /**
+   * Animate the camera back to its resting overview after token movement ends.
+   * Restores target, alpha, beta, and radius simultaneously over ~700 ms.
+   */
+  const panCameraHome = useCallback((): void => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const camera = scene.activeCamera;
+    if (!(camera instanceof ArcRotateCamera)) return;
+    const home = cameraHomeRef.current;
+    if (!home) return;
+
+    const FRAMES = 42; // ~700 ms at 60 fps
+
+    Animation.CreateAndStartAnimation(
+      'camHomeTarget', camera, 'target',
+      60, FRAMES, camera.target.clone(), home.target.clone(),
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    Animation.CreateAndStartAnimation(
+      'camHomeAlpha', camera, 'alpha',
+      60, FRAMES, camera.alpha, home.alpha,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    Animation.CreateAndStartAnimation(
+      'camHomeBeta', camera, 'beta',
+      60, FRAMES, camera.beta, home.beta,
+      Animation.ANIMATIONLOOPMODE_CONSTANT,
+    );
+    Animation.CreateAndStartAnimation(
+      'camHomeRadius', camera, 'radius',
+      60, FRAMES, camera.radius, home.radius,
       Animation.ANIMATIONLOOPMODE_CONSTANT,
     );
   }, []);
@@ -519,6 +579,17 @@ export function useGameEngine(): UseGameEngineReturn {
 
           movingPlayerIdRef.current = player.id;
           setIsTokenMoving(true);
+
+          // Zoom in so the token is clearly visible during the walk.
+          const scene = sceneRef.current;
+          const cam   = scene?.activeCamera;
+          if (cam instanceof ArcRotateCamera) {
+            Animation.CreateAndStartAnimation(
+              'camFollowZoom', cam, 'radius',
+              60, 20, cam.radius, 28,
+              Animation.ANIMATIONLOOPMODE_CONSTANT,
+            );
+          }
           panCameraToTile(pendingMove.fromTile); // start at origin tile
 
           void tokenRenderer.moveToken(
@@ -532,7 +603,6 @@ export function useGameEngine(): UseGameEngineReturn {
           ).then(() => {
             movingPlayerIdRef.current = null;
             setIsTokenMoving(false);
-            panCameraToTile(actualDest); // settle camera at destination
             // Final teleport snaps the token exactly on its spread position.
             const tt = transforms[actualDest];
             if (tt) {
@@ -543,6 +613,8 @@ export function useGameEngine(): UseGameEngineReturn {
                 totalActive,
               );
             }
+            // Return to full-board overview.
+            panCameraHome();
           });
 
           // Don't run the default sync below — walker is being animated.
@@ -563,7 +635,7 @@ export function useGameEngine(): UseGameEngineReturn {
       });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, panCameraToTile]);
+  }, [state, panCameraToTile, panCameraHome]);
 
   // ── Derived values ────────────────────────────────────────────────────────
 
