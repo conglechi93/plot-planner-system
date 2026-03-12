@@ -16,7 +16,6 @@ export type GamePhase =
   | 'buying_property'
   | 'paying_rent'
   | 'drawing_card'
-  | 'auction'
   | 'in_jail'
   | 'building'
   | 'bankruptcy_resolution'
@@ -62,20 +61,6 @@ export interface Square {
   isMortgaged: boolean;
 }
 
-export interface AuctionBid {
-  playerId: string;
-  amount: number;
-}
-
-export interface AuctionState {
-  squareIndex: number;
-  currentBid: number;
-  currentBidderId: string | null;
-  bids: AuctionBid[];
-  passedPlayers: string[];
-  isActive: boolean;
-}
-
 export interface GameLogEntry {
   turn: number;
   playerId: string;
@@ -115,9 +100,6 @@ export type GameEventType =
   | 'DECLINE_PROPERTY'
   | 'PAY_RENT'
   | 'APPLY_CARD'
-  | 'START_AUCTION'
-  | 'PLACE_BID'
-  | 'PASS_AUCTION'
   | 'BUILD_HOUSE'
   | 'BUILD_HOTEL'
   | 'SELL_HOUSE'
@@ -145,7 +127,6 @@ export interface GameState {
   chanceDeck: Card[];
   communityChestDeck: Card[];
   lastDrawnCard: Card | null;
-  auction: AuctionState | null;
   bankHouses: number;
   bankHotels: number;
   freeParkingPot: number;

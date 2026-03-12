@@ -18,12 +18,6 @@ import {
   sellHouse as sellHouseEngine,
   sellHotel as sellHotelEngine,
 } from './buildingActions';
-import {
-  startAuction,
-  placeBid,
-  passAuction,
-  checkAuctionComplete,
-} from './auctionEngine';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -401,50 +395,18 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // DECLINE_PROPERTY  — player declines; start an auction for other players
+    // DECLINE_PROPERTY  — player passes; property stays with the bank
     // ─────────────────────────────────────────────────────────────────────────
     case 'DECLINE_PROPERTY': {
       const pending = state.pendingAction;
       if (pending?.type !== 'buy_or_auction') return state;
 
       const square = state.squares[pending.squareIndex];
-      const stateWithLog = addLog(
-        { ...state, pendingAction: null },
+      return addLog(
+        { ...state, pendingAction: null, phase: 'player_turn_start' },
         player.id,
-        `${player.name} bỏ qua ${square.name}. Bắt đầu đấu giá!`,
+        `${player.name} bỏ qua ${square.name}.`,
       );
-      // Start auction — the declining player may still bid (standard rules)
-      return startAuction(pending.squareIndex, null, stateWithLog);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // START_AUCTION  — explicitly start an auction for a property
-    // ─────────────────────────────────────────────────────────────────────────
-    case 'START_AUCTION': {
-      const squareIndex = event.payload?.squareIndex as number | undefined;
-      if (squareIndex === undefined) return state;
-      return startAuction(squareIndex, null, { ...state, pendingAction: null });
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // PLACE_BID  — a player (human or AI) places a bid in the active auction
-    // ─────────────────────────────────────────────────────────────────────────
-    case 'PLACE_BID': {
-      const bidderId = event.payload?.playerId as string | undefined;
-      const bidAmount = event.payload?.amount as number | undefined;
-      if (!bidderId || bidAmount === undefined) return state;
-      const stateAfterBid = placeBid(bidderId, bidAmount, state);
-      return checkAuctionComplete(stateAfterBid);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // PASS_AUCTION  — a player passes on bidding
-    // ─────────────────────────────────────────────────────────────────────────
-    case 'PASS_AUCTION': {
-      const passerId = event.payload?.playerId as string | undefined;
-      if (!passerId) return state;
-      // passAuction already calls checkAuctionComplete internally
-      return passAuction(passerId, state);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -978,7 +940,6 @@ export function createInitialState(
     chanceDeck: shuffleCards(CHANCE_CARDS),
     communityChestDeck: shuffleCards(COMMUNITY_CHEST_CARDS),
     lastDrawnCard: null,
-    auction: null,
     bankHouses: BANK_HOUSES,
     bankHotels: BANK_HOTELS,
     freeParkingPot: 0,
