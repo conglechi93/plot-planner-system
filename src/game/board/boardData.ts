@@ -206,9 +206,9 @@ export const GROUP_COLORS: Record<PropertyGroup, string> = {
 };
 
 /**
- * Returns a fresh deep-copy of the 40 board squares so the game state never
- * accidentally mutates the module-level constant.
+ * Return a fresh deep-copy of BOARD_SQUARES with runtime state reset.
+ * Used by createInitialGameState() in gameReducer.ts.
  */
 export function createInitialSquares(): Square[] {
-  return BOARD_SQUARES.map((sq) => ({ ...sq }));
+  return BOARD_SQUARES.map(sq => ({ ...sq, ownerId: null, houses: 0, isMortgaged: false }));
 }

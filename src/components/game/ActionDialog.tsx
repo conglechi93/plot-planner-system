@@ -190,7 +190,7 @@ export function ActionDialog({
   if (!pendingAction) return null;
 
   // ── BUY OR AUCTION ─────────────────────────────────────────────────────────
-  if (pendingAction.type === 'buy_or_skip') {
+  if (pendingAction.type === 'buy_or_auction') {
     const square = squares[pendingAction.squareIndex];
     if (!square) return null;
 

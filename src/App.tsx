@@ -6,120 +6,100 @@ import { Toolbar } from './components/Toolbar';
 import { StatusBar } from './components/StatusBar';
 import { PropertyPanel } from './components/PropertyPanel';
 import { ModelPickerModal } from './components/ModelPickerModal';
-import { GameProvider } from './game/context/GameContext';
-import { useGame } from './game/context/GameContext';
-import { GameHUD } from './components/game/GameHUD';
+import { GameProvider, useGame } from './game/context/GameContext';
 import { GameModeToggle } from './components/game/GameModeToggle';
+import { GameHUD } from './components/game/GameHUD';
 import type { HouseInstance } from './types/HouseInstance';
+
+// ── Inner component has access to both SelectionContext and GameContext ────────
 
 function AppInner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { setSelectedHouse } = useSelection();
+  const game = useGame();
 
   const onSelectChange = useCallback(
-    (house: HouseInstance | null) => { setSelectedHouse(house); },
+    (house: HouseInstance | null) => {
+      setSelectedHouse(house);
+    },
     [setSelectedHouse],
   );
 
-  const controls = usePlanner(canvasRef, { onSelectChange });
+  const controls = usePlanner(canvasRef, {
+    onSelectChange,
+    gameModeActive: game.isGameMode,
+  });
 
-  // Game context ---------------------------------------------------------------
-  const game = useGame();
-  const { isGameMode, startGame, stopGame } = game;
+  // ── Start/stop game handlers ───────────────────────────────────────────────
 
-  // When user starts the game, grab the live Babylon scene from the planner
-  // and hand it to the GameContext so it can build 3-D renderers.
   const handleStartGame = useCallback(
     (playerName: string, aiCount: number) => {
       const scene = controls.getScene();
-      if (!scene) {
-        console.warn('[App] Scene not ready yet – cannot start game.');
-        return;
-      }
-      startGame(scene, playerName, aiCount);
+      if (!scene) return;
+      game.startGame(scene, playerName, aiCount);
     },
-    [controls, startGame],
+    [controls, game],
   );
 
   const handleStopGame = useCallback(() => {
-    stopGame();
-  }, [stopGame]);
-
-  // While game is active: disable the planner's pointer interactions so that
-  // clicks on the canvas are not intercepted by the placement / selection system.
-  // We achieve this cheaply by overlaying a transparent div over the canvas
-  // (rendered below in JSX) rather than patching usePlanner.
+    game.stopGame();
+  }, [game]);
 
   return (
     <div className="app-layout">
-      {/* ── Planner UI (hidden during game) ─────────────────────────────── */}
-      {!isGameMode && <Toolbar controls={controls} />}
-      {!isGameMode && (
-        <StatusBar status={controls.status} />
-      )}
+      {/* ── Planner UI (hidden during game) ───────────────────────────────── */}
+      {!game.isGameMode && <Toolbar controls={controls} />}
 
-      {/* ── The shared Babylon canvas ─────────────────────────────────────── */}
+      {/* ── 3-D canvas (always visible) ───────────────────────────────────── */}
       <canvas ref={canvasRef} id="renderCanvas" />
 
-      {/* Block planner pointer events while game is running */}
-      {isGameMode && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 0,
-            // transparent overlay – swallows pointer events so the planner
-            // selection / placement doesn't fire during game mode
-          }}
-          onClick={(e) => e.stopPropagation()}
-          onPointerMove={(e) => e.stopPropagation()}
-          onPointerDown={(e) => e.stopPropagation()}
+      {/* ── Planner status & panels ───────────────────────────────────────── */}
+      {!game.isGameMode && <StatusBar status={controls.status} />}
+
+      {!game.isGameMode && (
+        <div id="info">
+          <strong>Controls</strong><br />
+          Click house → Select<br />
+          Click ground → Place / Move<br />
+          <span className="key">R</span> → Rotate 90°<br />
+          <span className="key">Del</span> → Delete selected<br />
+          <span className="key">Esc</span> → Cancel / Deselect<br />
+          Scroll → Zoom &nbsp;|&nbsp; Drag → Orbit
+        </div>
+      )}
+
+      {!game.isGameMode && (
+        <PropertyPanel
+          gizmoMode={controls.gizmoMode}
+          setGizmoMode={controls.setGizmoMode}
         />
       )}
 
-      {/* ── Planner panels (hidden during game) ─────────────────────────── */}
-      {!isGameMode && (
-        <>
-          <div id="info">
-            <strong>Controls</strong><br />
-            Click house → Select<br />
-            Click ground → Place / Move<br />
-            <span className="key">R</span> → Rotate 90°<br />
-            <span className="key">Del</span> → Delete selected<br />
-            <span className="key">Esc</span> → Cancel / Deselect<br />
-            Scroll → Zoom &nbsp;|&nbsp; Drag → Orbit
-          </div>
-          <PropertyPanel
-            gizmoMode={controls.gizmoMode}
-            setGizmoMode={controls.setGizmoMode}
-          />
-          <ModelPickerModal controls={controls} />
+      {!game.isGameMode && <ModelPickerModal controls={controls} />}
 
-          {/* Inspector toggle — bottom left */}
-          <button
-            className={`inspector-btn${controls.isInspectorOpen ? ' active' : ''}`}
-            onClick={controls.toggleInspector}
-            title="Toggle Babylon Inspector"
-          >
-            🔍
-          </button>
-        </>
-      )}
+      {/* ── Inspector toggle ──────────────────────────────────────────────── */}
+      <button
+        className={`inspector-btn${controls.isInspectorOpen ? ' active' : ''}`}
+        onClick={controls.toggleInspector}
+        title="Toggle Babylon Inspector"
+      >
+        🔍
+      </button>
 
-      {/* ── Game HUD (shown during game) ──────────────────────────────────── */}
-      {isGameMode && game.state && (
-        <GameHUD engine={game} />
-      )}
-
-      {/* ── Game mode toggle (always visible, top-right) ─────────────────── */}
+      {/* ── Game mode toggle (always visible) ────────────────────────────── */}
       <GameModeToggle
-        isGameActive={isGameMode}
+        isGameActive={game.isGameMode}
         onStartGame={handleStartGame}
         onStopGame={handleStopGame}
       />
+
+      {/* ── Game HUD (only visible during active game) ───────────────────── */}
+      {game.isGameMode && <GameHUD engine={game} />}
     </div>
   );
 }
+
+// ── Root component ─────────────────────────────────────────────────────────────
 
 export default function App() {
   return (

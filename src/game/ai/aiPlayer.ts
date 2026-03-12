@@ -136,8 +136,8 @@ export function pickAIDecision(player: Player, state: GameState): GameEvent {
 
   // ── Property purchase decision ────────────────────────────────────────────
   if (
-    (phase === 'buying_property' || pendingAction?.type === 'buy_or_skip') &&
-    pendingAction?.type === 'buy_or_skip'
+    (phase === 'buying_property' || pendingAction?.type === 'buy_or_auction') &&
+    pendingAction?.type === 'buy_or_auction'
   ) {
     const square = state.squares[pendingAction.squareIndex];
     const price = square.price ?? 0;

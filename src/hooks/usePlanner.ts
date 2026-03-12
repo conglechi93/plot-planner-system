@@ -32,6 +32,8 @@ export interface PlannerControls {
 
 interface UsePlannerOptions {
   onSelectChange: (house: HouseInstance | null) => void;
+  /** When true, pointer events (select, place, move) are suppressed so the game overlay can handle them. */
+  gameModeActive?: boolean;
 }
 
 export function usePlanner(
@@ -41,12 +43,19 @@ export function usePlanner(
   // ── Babylon refs (survive re-renders without triggering them) ──
   const sceneRef      = useRef<ReturnType<typeof createSceneSetup> | null>(null);
   const housesRef     = useRef<Map<string, HouseInstance>>(new Map());
+  /** Tracks game-mode flag without re-render; read in pointer-event closure. */
+  const gameModeActiveRef = useRef(options.gameModeActive ?? false);
 
   // Keep latest callback in a ref to avoid stale closures in effects
   const onSelectChangeRef = useRef(options.onSelectChange);
   useEffect(() => {
     onSelectChangeRef.current = options.onSelectChange;
   }, [options.onSelectChange]);
+
+  // Keep gameModeActiveRef in sync with prop without re-creating the scene effect
+  useEffect(() => {
+    gameModeActiveRef.current = options.gameModeActive ?? false;
+  }, [options.gameModeActive]);
 
   // ── React state (drives UI re-renders) ──
   const [isPlacing, setIsPlacing]       = useState(false);
@@ -240,6 +249,8 @@ export function usePlanner(
 
       if (pointerInfo.type === PointerEventTypes.POINTERTAP) {
         if ((evt as MouseEvent).button !== 0) return;
+        // Suppress planner interactions while the game overlay is active
+        if (gameModeActiveRef.current) return;
 
         const posGizmo = gizmoManager.gizmos.positionGizmo;
         if (posGizmo?.isHovered) return;

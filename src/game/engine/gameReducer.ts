@@ -160,7 +160,7 @@ function buildPendingAction(
     case 'railroad':
     case 'utility': {
       if (!square.ownerId) {
-        return { type: 'buy_or_skip', squareIndex: position };
+        return { type: 'buy_or_auction', squareIndex: position };
       }
       if (square.ownerId !== player.id && !square.isMortgaged) {
         const rent = calculateRent(position, state, diceSum);
@@ -241,25 +241,32 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
 
       const newDoublesCount = isDoubles ? player.doublesCount + 1 : 0;
 
-      // Three consecutive doubles → go to jail immediately
+      // Three consecutive doubles → go to jail immediately, turn ends
       if (newDoublesCount >= 3) {
         const jailedPlayers = state.players.map((p, i) =>
           i === state.currentPlayerIndex
             ? { ...p, position: JAIL_POSITION, inJail: true, jailTurns: 0, doublesCount: 0 }
             : p,
         );
-        return addLog(
+        const jailed3State = addLog(
           {
             ...state,
             players: jailedPlayers,
             diceValues: [d1, d2],
-            isDoubles: true,
-            phase: 'in_jail',
+            isDoubles: false,
             pendingAction: null,
           },
           player.id,
-          `${player.name} tung xúc xắc ba đôi liên tiếp – vào tù!`,
+          `${player.name} tung xúc xắc ba đôi liên tiếp – vào tù! Lượt chơi kết thúc.`,
         );
+        const nextIdx3 = nextActivePlayerIndex(state.currentPlayerIndex, jailed3State.players);
+        return {
+          ...jailed3State,
+          currentPlayerIndex: nextIdx3,
+          phase: 'player_turn_start',
+          diceValues: null,
+          turnCount: jailed3State.turnCount + 1,
+        };
       }
 
       // Calculate new position, detect GO crossing
@@ -294,20 +301,24 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
 
       // ── Go to Jail ──────────────────────────────────────────────────────────
       if (landedSquare.type === 'go_to_jail') {
-        return addLog(
-          {
-            ...newState,
-            phase: 'in_jail',
-            pendingAction: null,
-            players: newState.players.map((p, i) =>
-              i === state.currentPlayerIndex
-                ? { ...p, position: JAIL_POSITION, inJail: true, jailTurns: 0 }
-                : p,
-            ),
-          },
-          player.id,
-          `${player.name} vào tù!`,
+        const jailedPlayers2 = newState.players.map((p, i) =>
+          i === state.currentPlayerIndex
+            ? { ...p, position: JAIL_POSITION, inJail: true, jailTurns: 0, doublesCount: 0 }
+            : p,
         );
+        const jailed2State = addLog(
+          { ...newState, pendingAction: null, isDoubles: false, players: jailedPlayers2 },
+          player.id,
+          `${player.name} vào tù! Lượt chơi kết thúc.`,
+        );
+        const nextIdx2 = nextActivePlayerIndex(state.currentPlayerIndex, jailed2State.players);
+        return {
+          ...jailed2State,
+          currentPlayerIndex: nextIdx2,
+          phase: 'player_turn_start',
+          diceValues: null,
+          turnCount: jailed2State.turnCount + 1,
+        };
       }
 
       // ── Card square ─────────────────────────────────────────────────────────
@@ -336,7 +347,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
       const pending = buildPendingAction(newPos, updatedPlayer, newState, diceSum);
 
       let phase: GameState['phase'] = 'landing';
-      if (pending?.type === 'buy_or_skip') phase = 'buying_property';
+      if (pending?.type === 'buy_or_auction') phase = 'buying_property';
       else if (pending?.type === 'pay_rent') phase = 'paying_rent';
       else if (pending?.type === 'pay_tax') phase = 'paying_rent';
       else phase = 'player_turn_start';
@@ -353,7 +364,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
     // ─────────────────────────────────────────────────────────────────────────
     case 'BUY_PROPERTY': {
       const pending = state.pendingAction;
-      if (pending?.type !== 'buy_or_skip') return state;
+      if (pending?.type !== 'buy_or_auction') return state;
 
       const { squareIndex } = pending;
       const square = state.squares[squareIndex];
@@ -388,7 +399,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
     // ─────────────────────────────────────────────────────────────────────────
     case 'DECLINE_PROPERTY': {
       const pending = state.pendingAction;
-      if (pending?.type !== 'buy_or_skip') return state;
+      if (pending?.type !== 'buy_or_auction') return state;
 
       const square = state.squares[pending.squareIndex];
       return addLog(
@@ -517,7 +528,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
       );
 
       let phase: GameState['phase'] = 'player_turn_start';
-      if (newPending?.type === 'buy_or_skip') phase = 'buying_property';
+      if (newPending?.type === 'buy_or_auction') phase = 'buying_property';
       else if (newPending?.type === 'pay_rent') phase = 'paying_rent';
       else if (newPending?.type === 'pay_tax') phase = 'paying_rent';
 
@@ -697,7 +708,8 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
         );
 
         let freedState: GameState = addLog(
-          { ...rolledState, players: releasedPlayers, phase: 'moving_token' },
+          // isDoubles = false: rolling doubles to exit jail does NOT grant an extra turn
+          { ...rolledState, players: releasedPlayers, phase: 'moving_token', isDoubles: false },
           player.id,
           `${player.name} tung đôi và ra tù, tiến đến ô ${newPos}.`,
         );
@@ -750,7 +762,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
         const pending = buildPendingAction(newPos, updatedPlayer, freedState, diceSum);
 
         let phase: GameState['phase'] = 'player_turn_start';
-        if (pending?.type === 'buy_or_skip') phase = 'buying_property';
+        if (pending?.type === 'buy_or_auction') phase = 'buying_property';
         else if (pending?.type === 'pay_rent') phase = 'paying_rent';
         else if (pending?.type === 'pay_tax') phase = 'paying_rent';
 
@@ -778,10 +790,11 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
         );
       }
 
-      return addLog(
+      // Player stayed in jail – end this turn and give control to next player
+      const stayJailState = addLog(
         {
           ...rolledState,
-          phase: 'player_turn_start',
+          isDoubles: false,
           players: rolledState.players.map((p, i) =>
             i === state.currentPlayerIndex ? { ...p, jailTurns: newJailTurns } : p,
           ),
@@ -789,10 +802,15 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
         player.id,
         `${player.name} không tung đôi, ở lại tù (lượt ${newJailTurns}/3).`,
       );
+      const nextJailIdx = nextActivePlayerIndex(state.currentPlayerIndex, stayJailState.players);
+      return {
+        ...stayJailState,
+        currentPlayerIndex: nextJailIdx,
+        phase: 'player_turn_start',
+        diceValues: null,
+        turnCount: stayJailState.turnCount + 1,
+      };
     }
-
-    // ─────────────────────────────────────────────────────────────────────────
-    // DECLARE_BANKRUPTCY
     // ─────────────────────────────────────────────────────────────────────────
     case 'DECLARE_BANKRUPTCY': {
       const creditorId = (event.payload?.creditorId as string | undefined) ?? null;
@@ -850,10 +868,8 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
     // ─────────────────────────────────────────────────────────────────────────
     // Exhaustiveness guard
     // ─────────────────────────────────────────────────────────────────────────
-    default: {
-      const _never: never = event.type;
-      return _never;
-    }
+    default:
+      return state;
   }
 }
 
@@ -924,6 +940,7 @@ export function createInitialState(
     chanceDeck: shuffleCards(CHANCE_CARDS),
     communityChestDeck: shuffleCards(COMMUNITY_CHEST_CARDS),
     lastDrawnCard: null,
+    auction: null,
     bankHouses: BANK_HOUSES,
     bankHotels: BANK_HOTELS,
     freeParkingPot: 0,
