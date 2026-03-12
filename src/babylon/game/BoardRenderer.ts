@@ -18,7 +18,6 @@ import {
   Color3,
   DynamicTexture,
   Mesh,
-  Vector3,
 } from '@babylonjs/core';
 import { computeTileTransforms } from '../../game/board/tileLayout';
 import type { TileTransform } from '../../game/board/tileLayout';
@@ -201,20 +200,35 @@ export class BoardRenderer {
   private buildTileMesh(t: TileTransform, square: Square): Mesh {
     const hex = tileColor(square);
 
-    // ── Box geometry ────────────────────────────────────────────────────────
-    const mesh = MeshBuilder.CreateBox(
+    // ── Flat-plane geometry ──────────────────────────────────────────────────
+    //
+    // We use CreateGround (a flat quad lying in the XZ plane) rather than
+    // CreateBox for two reasons:
+    //
+    //  1. No side faces → no coplanar-face Z-fighting between adjacent tiles
+    //     (tiles that share an edge would otherwise have their side faces at
+    //     exactly the same world position, causing flicker).
+    //
+    //  2. Corner tiles no longer extend beyond their 20×20 footprint when
+    //     rotated, because there is no volume to spill over.
+    //
+    // Each tile is rendered at 96 % of its allocated width/depth, leaving a
+    // 2 % gap on every side that prevents even the top-face edges of adjacent
+    // tiles from aligning perfectly.
+    const GAP = 0.96;
+    const w = t.tileWidth  * GAP;
+    const d = t.tileDepth  * GAP;
+
+    const mesh = MeshBuilder.CreateGround(
       `tile_${t.index}`,
-      {
-        width:  t.tileWidth,
-        height: 0.1,
-        depth:  t.tileDepth,
-      },
+      { width: w, height: d, subdivisions: 1 },
       this.scene,
     );
 
-    // y = 0.1 → box centre; bottom face at y = 0.05, top face at y = 0.15.
-    // Keeping ≥ 0.05 gap above the ground plane (y = 0) eliminates Z-fighting.
-    mesh.position.set(t.position.x, 0.1, t.position.z);
+    // y = TILE_Y (from tileLayout) + a tiny lift so the plane never sits flush
+    // with the ground and never Z-fights with ground geometry.
+    // We add 0.05 on top of the tileLayout y to ensure clearance.
+    mesh.position.set(t.position.x, t.position.y + 0.05, t.position.z);
     mesh.rotation.y  = t.rotationY;
     mesh.isPickable  = false;
     mesh.receiveShadows = true;
@@ -226,9 +240,10 @@ export class BoardRenderer {
     const mat = new StandardMaterial(`tileMat_${t.index}`, this.scene);
     mat.diffuseColor   = hexToColor3(hex);
     mat.diffuseTexture = texture;
-    // A subtle ambient self-illumination so tiles are readable without strong
-    // directional light.
     mat.emissiveColor  = hexToColor3(hex).scale(0.25);
+    // Flat planes are single-sided by default in Babylon; enable back-face
+    // culling off so the tile is visible from below too (during camera orbits).
+    mat.backFaceCulling = false;
     mesh.material = mat;
 
     return mesh;
@@ -243,15 +258,26 @@ export class BoardRenderer {
     square: Square,
     hex: string,
   ): DynamicTexture {
-    // Corner tiles get a bigger texture for their extra real-estate.
-    const texW = t.isCorner ? 256 : 256;
-    const texH = t.isCorner ? 256 : 128;
+    // ── Texture size must match the tile's WORLD aspect ratio ─────────────────
+    //
+    // Regular tile mesh: width=6.67u, depth=20u  → ratio 1:3
+    // Corner  tile mesh: 20u × 20u               → ratio 1:1
+    //
+    // Mismatching the texture aspect ratio stretches every pixel on one axis
+    // (the old 256×128 = 2:1 ratio on a 1:3 mesh caused 6× vertical stretch
+    // and blurry text).  Use 128×384 (≈1:3) for regular and 256×256 for corners.
+    //
+    // generateMipMaps=true  so the GPU uses the correct mip level when the tile
+    // is small on screen (camera zoomed out) instead of point-sampling a huge
+    // texture into a few pixels.
+    const texW = t.isCorner ? 256 : 128;
+    const texH = t.isCorner ? 256 : 384;
 
     const texture = new DynamicTexture(
       `tileTex_${t.index}`,
       { width: texW, height: texH },
       this.scene,
-      false, // generate mips = false; tiles are seen from a fixed camera height
+      true, // generateMipMaps — critical for sharpness at distance
     );
 
     const ctx = texture.getContext() as CanvasRenderingContext2D;
@@ -261,23 +287,41 @@ export class BoardRenderer {
     ctx.fillStyle = hex;
     ctx.fillRect(0, 0, texW, texH);
 
-    // Thin border
-    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    // Border
+    ctx.strokeStyle = 'rgba(0,0,0,0.5)';
     ctx.lineWidth = 3;
     ctx.strokeRect(2, 2, texW - 4, texH - 4);
 
+    // ── Group colour band ──────────────────────────────────────────────────
+    // Draw band FIRST so text paints on top of it.
+    if (square.group) {
+      const bandH = t.isCorner ? 30 : 40; // 40/384 ≈ 2 world units — clearly visible
+      ctx.fillStyle = GROUP_COLORS[square.group] ?? hex;
+      ctx.fillRect(0, 0, texW, bandH);
+      ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(0, 0, texW, bandH);
+    }
+
     // ── Name ──────────────────────────────────────────────────────────────
-    const nameFontSize = t.isCorner ? 22 : 14;
-    ctx.fillStyle  = textColor;
-    ctx.font       = `bold ${nameFontSize}px Arial`;
-    ctx.textAlign  = 'center';
+    // Font sized so characters are legible in world-space.
+    // Regular: 24 px in 128 px width  → ≈19 % of tile width  → ~1.2 world-unit text height
+    // Corner : 26 px in 256 px width  → ≈10 % of tile width
+    const nameFontSize = t.isCorner ? 26 : 24;
+    ctx.fillStyle    = textColor;
+    ctx.font         = `bold ${nameFontSize}px Arial`;
+    ctx.textAlign    = 'center';
     ctx.textBaseline = 'top';
 
-    const lines = wrapText(ctx, square.name, texW - 16);
-    const lineH = nameFontSize + 4;
-    // Start drawing centred vertically for name block
+    const lines  = wrapText(ctx, square.name, texW - 12);
+    const lineH  = nameFontSize + 6;
     const nameBlockH = lines.length * lineH;
-    let nameY = Math.max(8, (texH * 0.55 - nameBlockH) / 2);
+
+    // Vertically centre the name block within the lower 70 % of the tile
+    // (leaving the top 30 % for the colour band area).
+    const topReserve = t.isCorner ? 36 : 48;  // reserve for band
+    const textAreaH  = texH - topReserve - 30; // 30 px reserved at bottom for price
+    let nameY = topReserve + Math.max(8, (textAreaH - nameBlockH) / 2);
 
     for (const line of lines) {
       ctx.fillText(line, texW / 2, nameY);
@@ -286,22 +330,11 @@ export class BoardRenderer {
 
     // ── Price / tax amount ─────────────────────────────────────────────────
     if (square.price !== undefined) {
-      const priceFontSize = t.isCorner ? 18 : 12;
-      ctx.font       = `${priceFontSize}px Arial`;
+      const priceFontSize = t.isCorner ? 20 : 18;
+      ctx.font         = `${priceFontSize}px Arial`;
       ctx.textBaseline = 'bottom';
-      ctx.fillStyle  = textColor;
-      ctx.fillText(`${square.price}tr`, texW / 2, texH - 6);
-    }
-
-    // ── Group colour band (top strip for property tiles) ─────────────────
-    if (square.group) {
-      const bandH = t.isCorner ? 20 : 14;
-      ctx.fillStyle = GROUP_COLORS[square.group] ?? hex;
-      ctx.fillRect(0, 0, texW, bandH);
-      // Re-draw top border over the band
-      ctx.strokeStyle = 'rgba(0,0,0,0.3)';
-      ctx.lineWidth   = 1;
-      ctx.strokeRect(0, 0, texW, bandH);
+      ctx.fillStyle    = textColor;
+      ctx.fillText(`${square.price} tr`, texW / 2, texH - 6);
     }
 
     texture.update();
@@ -335,46 +368,46 @@ export class BoardRenderer {
     const t = this.transforms[squareIndex];
     if (!t) return;
 
-    // Strip: full tile width, 0.05 high, 1/4 of tile depth, inset from the
-    // outer edge (near player side) so it's clearly visible from a top-down
-    // camera.
-    const stripDepth = t.tileDepth * 0.18;
-    const strip = MeshBuilder.CreateBox(
+    // Ownership strip: a flat plane (CreateGround) rendered just above the
+    // tile plane so it is never coplanar with the tile.
+    // Width: 80 % of tileWidth; depth: 20 % of tileDepth (near outer edge).
+    const stripW = t.tileWidth  * 0.80;
+    const stripD = t.tileDepth  * 0.20;
+
+    const strip = MeshBuilder.CreateGround(
       `ownerStrip_${squareIndex}`,
-      {
-        width:  t.tileWidth  * 0.9,
-        height: 0.04,
-        depth:  stripDepth,
-      },
+      { width: stripW, height: stripD, subdivisions: 1 },
       this.scene,
     );
 
-    // Offset the strip toward the outer edge of the tile.
-    // The tile's rotationY determines which world axis is "outward".
-    const inwardOffset = (t.tileDepth / 2) - (stripDepth / 2) - 0.05;
-    const stripPos = new Vector3(t.position.x, 0.17, t.position.z);
+    // Place strip just above the tile (tile is at tileY + 0.05; strip at + 0.06).
+    const stripY = t.position.y + 0.06;
 
-    // Shift along the tile's local Z axis (outward direction before rotation)
-    // by applying the tile rotation.
+    // Offset strip toward the OUTER edge of the tile in the tile's local space.
+    // "Outer" is the -Z direction in local tile space (before rotationY).
+    // After applying rotationY the world-space offset becomes:
+    //   Δx =  sin(rotY) * outwardLocalZ
+    //   Δz =  cos(rotY) * outwardLocalZ
+    const outwardLocalZ = -(t.tileDepth / 2 - stripD / 2 - 0.1);
     const cos = Math.cos(t.rotationY);
     const sin = Math.sin(t.rotationY);
-    // Local offset vector (0, 0, inwardOffset) rotated by rotationY around Y:
-    stripPos.x += sin * inwardOffset;  // rotY rotates in XZ plane: z→x = sin
-    stripPos.z += cos * inwardOffset;  // z component after rotation = cos * dz
 
-    strip.position.copyFrom(stripPos);
-    strip.rotation.y  = t.rotationY;
-    strip.isPickable  = false;
+    strip.position.set(
+      t.position.x + sin * outwardLocalZ,
+      stripY,
+      t.position.z + cos * outwardLocalZ,
+    );
+    strip.rotation.y = t.rotationY;
+    strip.isPickable = false;
 
-    // Colour the strip with the player's token colour — we don't have direct
-    // player colour access here, so use the property group colour as a proxy.
     const stripColorHex = square.group
       ? GROUP_COLORS[square.group] ?? '#CCCCCC'
       : '#AAAAAA';
 
     const mat = new StandardMaterial(`ownerStripMat_${squareIndex}`, this.scene);
-    mat.diffuseColor  = hexToColor3(stripColorHex);
-    mat.emissiveColor = hexToColor3(stripColorHex).scale(0.4);
+    mat.diffuseColor    = hexToColor3(stripColorHex);
+    mat.emissiveColor   = hexToColor3(stripColorHex).scale(0.5);
+    mat.backFaceCulling = false;
     strip.material = mat;
 
     this.ownerStrips.set(squareIndex, strip);

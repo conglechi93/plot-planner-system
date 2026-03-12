@@ -66,11 +66,16 @@ export function computeTileTransforms(): TileTransform[] {
   const out: TileTransform[] = new Array<TileTransform>(40);
 
   // ── Corners ──────────────────────────────────────────────────────────────
+  // Corners use axis-aligned rotations (0 / π) so their 20×20 mesh footprint
+  // stays within the allocated 20×20 cell.  A 45° rotation would turn the box
+  // into a 28×28 diamond that physically overlaps adjacent regular tiles and
+  // causes Z-fighting.
+  //
   // index 0  → bottom-right
   out[0] = {
     index: 0,
     position: { x: CORNER_POS, y: TILE_Y, z: -CORNER_POS },
-    rotationY: Math.PI * 0.25,
+    rotationY: 0,             // axis-aligned, label faces -Z (south / outward)
     tileWidth: CORNER_SIZE,
     tileDepth: CORNER_SIZE,
     isCorner: true,
@@ -80,7 +85,7 @@ export function computeTileTransforms(): TileTransform[] {
   out[10] = {
     index: 10,
     position: { x: -CORNER_POS, y: TILE_Y, z: -CORNER_POS },
-    rotationY: Math.PI * 0.75,
+    rotationY: 0,             // axis-aligned
     tileWidth: CORNER_SIZE,
     tileDepth: CORNER_SIZE,
     isCorner: true,
@@ -90,7 +95,7 @@ export function computeTileTransforms(): TileTransform[] {
   out[20] = {
     index: 20,
     position: { x: -CORNER_POS, y: TILE_Y, z: CORNER_POS },
-    rotationY: Math.PI * 1.25,
+    rotationY: Math.PI,       // label faces +Z (north / outward)
     tileWidth: CORNER_SIZE,
     tileDepth: CORNER_SIZE,
     isCorner: true,
@@ -100,7 +105,7 @@ export function computeTileTransforms(): TileTransform[] {
   out[30] = {
     index: 30,
     position: { x: CORNER_POS, y: TILE_Y, z: CORNER_POS },
-    rotationY: Math.PI * 1.75,
+    rotationY: Math.PI,       // axis-aligned, label faces south
     tileWidth: CORNER_SIZE,
     tileDepth: CORNER_SIZE,
     isCorner: true,
