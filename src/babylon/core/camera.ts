@@ -11,7 +11,7 @@ export function createCamera(scene: Scene, canvas: HTMLCanvasElement): ArcRotate
     'mainCamera',
     -Math.PI / 2,  // alpha: nhìn từ hướng -Z
     Math.PI / 3.5, // beta: góc dọc ~51° so với mặt phẳng
-    42,            // radius: khoảng cách ban đầu
+    80,            // radius: khoảng cách ban đầu (tăng để bao phủ mặt phẳng 100x100)
     Vector3.Zero(),
     scene
   );
@@ -21,7 +21,7 @@ export function createCamera(scene: Scene, canvas: HTMLCanvasElement): ArcRotate
 
   // Giới hạn zoom
   camera.lowerRadiusLimit = 5;
-  camera.upperRadiusLimit = 90;
+  camera.upperRadiusLimit = 180;
 
   // Giới hạn góc đứng - không cho phép nhìn từ dưới đất lên
   camera.lowerBetaLimit = 0.2;

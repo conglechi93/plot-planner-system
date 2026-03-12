@@ -1,15 +1,15 @@
 import { MeshBuilder, StandardMaterial, DynamicTexture, Color3, Scene, Mesh } from '@babylonjs/core';
 
 /**
- * Tạo mặt đất 50x50 với texture lưới kẻ để dễ căn chỉnh nhà.
+ * Tạo mặt đất 100x100 với texture lưới kẻ để dễ căn chỉnh nhà.
  * Ground là mesh duy nhất được dùng làm mục tiêu raycast cho việc đặt nhà.
  */
 export function createGround(scene: Scene): Mesh {
   const ground = MeshBuilder.CreateGround(
     'ground',
     {
-      width: 50,
-      height: 50,
+      width: 100,
+      height: 100,
       subdivisions: 2,
     },
     scene
@@ -38,12 +38,12 @@ export function createGround(scene: Scene): Mesh {
     }
   }
 
-  const cellSize = textureSize / 50;
+  const cellSize = textureSize / 100;
 
   // Đường kẻ nhỏ (1m) – mờ nhẹ
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.10)';
   ctx.lineWidth = 0.6;
-  for (let i = 0; i <= 50; i++) {
+  for (let i = 0; i <= 100; i++) {
     const pos = i * cellSize;
     ctx.beginPath(); ctx.moveTo(pos, 0); ctx.lineTo(pos, textureSize); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, pos); ctx.lineTo(textureSize, pos); ctx.stroke();
@@ -52,7 +52,7 @@ export function createGround(scene: Scene): Mesh {
   // Đường kẻ lớn (5m) – đậm hơn để dễ định hướng
   ctx.strokeStyle = 'rgba(0, 0, 0, 0.22)';
   ctx.lineWidth = 1.2;
-  for (let i = 0; i <= 10; i++) {
+  for (let i = 0; i <= 20; i++) {
     const pos = i * cellSize * 5;
     ctx.beginPath(); ctx.moveTo(pos, 0); ctx.lineTo(pos, textureSize); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(0, pos); ctx.lineTo(textureSize, pos); ctx.stroke();
