@@ -212,9 +212,9 @@ export class BoardRenderer {
       this.scene,
     );
 
-    // y = 0.05 places the 0.1-height box so its bottom face sits exactly on
-    // the ground plane (y = 0) and its top face is at y = 0.1.
-    mesh.position.set(t.position.x, 0.05, t.position.z);
+    // y = 0.1 → box centre; bottom face at y = 0.05, top face at y = 0.15.
+    // Keeping ≥ 0.05 gap above the ground plane (y = 0) eliminates Z-fighting.
+    mesh.position.set(t.position.x, 0.1, t.position.z);
     mesh.rotation.y  = t.rotationY;
     mesh.isPickable  = false;
     mesh.receiveShadows = true;
@@ -352,7 +352,7 @@ export class BoardRenderer {
     // Offset the strip toward the outer edge of the tile.
     // The tile's rotationY determines which world axis is "outward".
     const inwardOffset = (t.tileDepth / 2) - (stripDepth / 2) - 0.05;
-    const stripPos = new Vector3(t.position.x, 0.12, t.position.z);
+    const stripPos = new Vector3(t.position.x, 0.17, t.position.z);
 
     // Shift along the tile's local Z axis (outward direction before rotation)
     // by applying the tile rotation.

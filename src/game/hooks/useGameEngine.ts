@@ -193,8 +193,8 @@ export function useGameEngine(): UseGameEngineReturn {
       const transforms   = computeTileTransforms();
       const goTransform  = transforms[0];
       const goPos        = goTransform
-        ? { x: goTransform.position.x, y: 0.10, z: goTransform.position.z }
-        : { x: 20, y: 0.10, z: -20 };
+        ? { x: goTransform.position.x, y: 0.15, z: goTransform.position.z }
+        : { x: 20, y: 0.15, z: -20 };
       const totalPlayers = initialState.players.length;
 
       initialState.players.forEach((player: Player, idx: number) => {
@@ -482,7 +482,7 @@ export function useGameEngine(): UseGameEngineReturn {
         const activeIdx = activePlayers.findIndex(p => p.id === player.id);
         tokenRenderer.placeTokenAtTile(
           player.id,
-          { x: tt.position.x, y: 0.10, z: tt.position.z },
+          { x: tt.position.x, y: 0.15, z: tt.position.z },
           activeIdx >= 0 ? activeIdx : 0,
           totalActive,
         );
@@ -525,7 +525,7 @@ export function useGameEngine(): UseGameEngineReturn {
             player.id,
             pendingMove.fromTile,
             actualDest,
-            transforms.map(t => ({ x: t.position.x, y: 0.10, z: t.position.z })),
+            transforms.map(t => ({ x: t.position.x, y: 0.15, z: t.position.z })),
             spreadIdx,
             totalActive,
             (currentStep) => panCameraToTile(currentStep), // follow each step
@@ -538,7 +538,7 @@ export function useGameEngine(): UseGameEngineReturn {
             if (tt) {
               tokenRenderer.placeTokenAtTile(
                 player.id,
-                { x: tt.position.x, y: 0.10, z: tt.position.z },
+                { x: tt.position.x, y: 0.15, z: tt.position.z },
                 spreadIdx,
                 totalActive,
               );
