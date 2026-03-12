@@ -24,28 +24,28 @@ import {
 import { getContainer } from '../../utils/containerCache';
 
 // ---------------------------------------------------------------------------
-// Face-up rotations (Euler XYZ) for each die value 1–6.
+// Face-up rotations for each die value 1–6.
 //
-// Actual dice.glb face layout (confirmed from in-game observation):
-//   face 2 → +Y  (default up)     face 5 → -Y
-//   face 3 → +Z                   face 4 → -Z
-//   face 1 → +X                   face 6 → -X
+// Actual dice.glb face layout (verified from 4 in-game observations,
+// Babylon.js LEFT-HANDED coordinate system):
 //
-// To bring a given face to world +Y we rotate the die body:
-//   face 1 (+X → +Y):  Z = +π/2
-//   face 2 (+Y → +Y):  no rotation
-//   face 3 (+Z → +Y):  X = +π/2   ← confirmed: roll 5 displayed as 3 with old mapping
-//   face 4 (-Z → +Y):  X = -π/2
-//   face 5 (-Y → +Y):  X =  π     ← confirmed: roll 6 displayed as 5 with old mapping
-//   face 6 (-X → +Y):  Z = -π/2
+//   body +Y = face 4   body -Y = face 5
+//   body +Z = face 3   body -Z = face 1
+//   body +X = face 6   body -X = face 2
+//
+// In LH Babylon, rotation.x = +θ rotates +Z → +Y (not -Z):
+//   Rx(+PI/2) → body +Z rises to world +Y  → shows face 3
+//   Rx(-PI/2) → body -Z rises to world +Y  → shows face 1
+//   Rz(+PI/2) → body -X rises to world +Y  → shows face 2
+//   Rz(-PI/2) → body +X rises to world +Y  → shows face 6
 // ---------------------------------------------------------------------------
 const FACE_ROT: Record<number, Vector3> = {
-  1: new Vector3(0,               0,  Math.PI / 2),   // +X → top
-  2: new Vector3(0,               0,  0),               // +Y → already top
+  1: new Vector3(-Math.PI / 2,    0,  0),               // -Z → top
+  2: new Vector3(0,               0,  Math.PI / 2),     // -X → top
   3: new Vector3( Math.PI / 2,    0,  0),               // +Z → top
-  4: new Vector3(-Math.PI / 2,    0,  0),               // -Z → top
+  4: new Vector3(0,               0,  0),               // +Y → already top
   5: new Vector3( Math.PI,        0,  0),               // -Y → top
-  6: new Vector3(0,               0, -Math.PI / 2),    // -X → top
+  6: new Vector3(0,               0, -Math.PI / 2),    // +X → top
 };
 
 const GLB_PATH    = '/models/common/dice.glb';
