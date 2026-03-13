@@ -15,7 +15,7 @@ export function createGround(scene: Scene): Mesh {
     scene
   );
 
-  ground.isPickable = true;
+  ground.isPickable = true; // Cho phép raycast chọn mặt đất khi đặt nhà
   ground.receiveShadows = true; // Bật nhận bóng đổ từ nhà
 
   // --- Texture lưới độ phân giải cao ---

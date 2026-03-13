@@ -252,9 +252,6 @@ export function usePlanner(
         // Suppress planner interactions while the game overlay is active
         if (gameModeActiveRef.current) return;
 
-        const posGizmo = gizmoManager.gizmos.positionGizmo;
-        if (posGizmo?.isHovered) return;
-
         const pick = scene.pick(evt.offsetX, evt.offsetY);
 
         if (placementSystem.isPlacing) {
@@ -264,12 +261,19 @@ export function usePlanner(
           return;
         }
 
+        // Chặn click khi pointer đang nằm trên gizmo handle —
+        // chỉ áp dụng khi không phải ground click (move) hay house click (select).
+        // Để check sau khi biết pick target, tránh bỏ sót move khi gizmo vừa re-attach.
+        const posGizmo = gizmoManager.gizmos.positionGizmo;
+        const isGizmoHovered = posGizmo?.isHovered ?? false;
+
         if (!pick.hit || pick.pickedMesh === null) {
-          selectionSystem.select(null);
+          if (!isGizmoHovered) selectionSystem.select(null);
           return;
         }
 
         if (pick.pickedMesh === ground) {
+          // Ground click: di chuyển model đang chọn — không bị chặn bởi gizmo hover
           const selected = selectionSystem.getSelected();
           if (selected && pick.pickedPoint) {
             transformSystem.moveHouse(selected, pick.pickedPoint);
@@ -278,6 +282,9 @@ export function usePlanner(
           }
           return;
         }
+
+        // Click vào gizmo handle → để gizmo tự xử lý, không select lại
+        if (isGizmoHovered) return;
 
         const houseId = SelectionSystem.getHouseIdFromMesh(pick.pickedMesh);
         if (houseId) {

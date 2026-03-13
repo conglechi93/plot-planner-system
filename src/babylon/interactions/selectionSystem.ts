@@ -26,6 +26,10 @@ export class SelectionSystem {
    * Tự động xóa highlight của ngôi nhà cũ và thêm highlight cho ngôi nhà mới.
    */
   select(house: HouseInstance | null): void {
+    // Không làm gì nếu đang chọn lại cùng một ngôi nhà —
+    // tránh re-attach gizmo gây corrupted isHovered state.
+    if (house === this.selectedHouse) return;
+
     // Xóa highlight của ngôi nhà đang được chọn
     if (this.selectedHouse) {
       this.clearHighlight(this.selectedHouse.mesh);

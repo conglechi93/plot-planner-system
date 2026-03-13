@@ -274,12 +274,12 @@ body {
 
 /* ═══════════════════════════════════
    PROPERTY PANEL
-   Trượt xuống từ vị trí các nút bên trái
+   Cố định bên phải màn hình
 ═══════════════════════════════════ */
 #propertyPanel {
   position: fixed;
-  top: 180px;
-  left: 16px;
+  top: 300px;
+  right: 16px;
   width: 244px;
   background: rgba(10, 12, 22, 0.86);
   color: #eee;
