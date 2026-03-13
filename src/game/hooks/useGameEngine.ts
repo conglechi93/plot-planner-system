@@ -481,6 +481,30 @@ export function useGameEngine(): UseGameEngineReturn {
     [dispatch],
   );
 
+  // ── Auto-apply chance / community-chest cards for the human player ───────
+  //
+  // Drawing a card is mandatory — there is no player choice involved, so we
+  // automatically dispatch APPLY_CARD after a short pause (1 500 ms) that
+  // gives the human just enough time to read the card description.
+  //
+  // AI players handle this themselves via pickAIDecision → APPLY_CARD.
+
+  useEffect(() => {
+    if (!state || !isActiveRef.current) return;
+    if (state.pendingAction?.type !== 'card_drawn') return;
+
+    // Only auto-apply for the human player; AI is handled by the AI effect.
+    const currentPlayer = state.players[state.currentPlayerIndex];
+    if (!currentPlayer || currentPlayer.isAI || currentPlayer.isBankrupt) return;
+
+    const timer = setTimeout(() => {
+      if (!isActiveRef.current) return;
+      dispatch({ type: 'APPLY_CARD' });
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [state, dispatch]);
+
   // ── AI turn automation ────────────────────────────────────────────────────
   //
   // Fires whenever phase or currentPlayerIndex changes.  If the active player
