@@ -50,7 +50,7 @@ function AppInner() {
     <div className="app-layout">
       {/* ── Planner UI — hidden during game mode ── */}
       {!game.isGameMode && (
-        <Toolbar controls={controls} />
+        <Toolbar controls={controls} onStartGame={handleStartGame} />
       )}
 
       {/* ── Babylon canvas ── */}
@@ -101,7 +101,6 @@ function AppInner() {
       {/* ── Game Mode Toggle button (always visible) ── */}
       <GameModeToggle
         isGameActive={game.isGameMode}
-        onStartGame={handleStartGame}
         onStopGame={handleStopGame}
       />
 

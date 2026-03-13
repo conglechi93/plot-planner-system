@@ -189,6 +189,101 @@ body {
   color: white;
 }
 
+.btn-play-game {
+  background: #16a34a;
+  color: white;
+}
+
+/* ── Game setup panel (nằm trong Toolbar) ── */
+.game-setup-panel {
+  background: rgba(10, 10, 20, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 2px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+}
+
+.game-setup-title {
+  font-size: 13px;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.4px;
+}
+
+.game-setup-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.45);
+  text-transform: uppercase;
+  letter-spacing: 0.8px;
+  margin-bottom: 5px;
+}
+
+.game-setup-input {
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.game-setup-ai-row {
+  display: flex;
+  gap: 6px;
+}
+
+.game-setup-ai-btn {
+  flex: 1;
+  padding: 7px 0;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.5);
+  border: 2px solid transparent;
+  border-radius: 7px;
+  font-weight: 700;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.game-setup-ai-btn.active {
+  background: #7c3aed;
+  color: #fff;
+  border-color: #a78bfa;
+}
+
+.game-setup-start {
+  padding: 10px 0;
+  background: linear-gradient(90deg, #16a34a, #15803d);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  font-weight: 900;
+  font-size: 13px;
+  cursor: pointer;
+  letter-spacing: 0.8px;
+  box-shadow: 0 3px 10px rgba(22, 163, 74, 0.4);
+}
+
+.game-setup-cancel {
+  background: none;
+  border: none;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 11px;
+  cursor: pointer;
+  text-align: center;
+  padding: 2px 0;
+  text-decoration: underline;
+}
+
 .btn-cancel {
   background: #888;
   color: white;

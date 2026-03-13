@@ -4,6 +4,7 @@ import type { PlannerControls } from '../hooks/usePlanner';
 
 interface Props {
   controls: PlannerControls;
+  onStartGame: (playerName: string, aiCount: number) => void;
 }
 
 /** Extract a display name from a URL (filename without extension, prettified). */
@@ -15,7 +16,7 @@ function nameFromUrl(url: string): string {
     .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-export function Toolbar({ controls }: Props) {
+export function Toolbar({ controls, onStartGame }: Props) {
   const { isPlacing, cancelPlacement, openPicker, startPlacement, exportLayout, importLayout } = controls;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -24,6 +25,11 @@ export function Toolbar({ controls }: Props) {
   const [urlValue,     setUrlValue]     = useState('');
   const [urlError,     setUrlError]     = useState('');
   const urlInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Game setup state ───────────────────────────────────────────────────────
+  const [gameSetupOpen, setGameSetupOpen] = useState(false);
+  const [playerName,    setPlayerName]    = useState('Người Chơi 1');
+  const [aiCount,       setAiCount]       = useState(3);
 
   function handleAddModel() {
     openPicker((model) => {
@@ -117,6 +123,12 @@ export function Toolbar({ controls }: Props) {
     e.target.value = '';
   }
 
+  function handleStartGame() {
+    const name = playerName.trim() || 'Người Chơi 1';
+    onStartGame(name, aiCount);
+    setGameSetupOpen(false);
+  }
+
   return (
     <div id="ui">
       <button className="btn btn-add-model" onClick={handleAddModel}>
@@ -165,6 +177,54 @@ export function Toolbar({ controls }: Props) {
       <button className="btn btn-import" onClick={handleImportClick}>
         📂 Import Layout
       </button>
+      <button className="btn btn-play-game" onClick={() => setGameSetupOpen(v => !v)}>
+        🎲 Chơi Cờ Tỉ Phú
+      </button>
+
+      {/* ── Game setup panel ── */}
+      {gameSetupOpen && (
+        <div className="game-setup-panel">
+          <div className="game-setup-title">🎲 Thiết lập trận đấu</div>
+
+          <div>
+            <div className="game-setup-label">Tên người chơi</div>
+            <input
+              className="game-setup-input"
+              type="text"
+              value={playerName}
+              maxLength={20}
+              autoFocus
+              onChange={e => setPlayerName(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') handleStartGame();
+                if (e.key === 'Escape') setGameSetupOpen(false);
+              }}
+            />
+          </div>
+
+          <div>
+            <div className="game-setup-label">Số đối thủ AI</div>
+            <div className="game-setup-ai-row">
+              {[1, 2, 3].map(n => (
+                <button
+                  key={n}
+                  className={`game-setup-ai-btn${aiCount === n ? ' active' : ''}`}
+                  onClick={() => setAiCount(n)}
+                >
+                  {n} AI
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button className="game-setup-start" onClick={handleStartGame}>
+            BẮT ĐẦU GAME
+          </button>
+          <button className="game-setup-cancel" onClick={() => setGameSetupOpen(false)}>
+            Huỷ
+          </button>
+        </div>
+      )}
       {isPlacing && (
         <button className="btn btn-cancel" onClick={cancelPlacement}>
           ✕ Cancel Placement

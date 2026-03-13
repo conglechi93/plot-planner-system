@@ -7,6 +7,7 @@ import type { HouseInstance, LayoutData } from '../types/HouseInstance';
 import type { ModelEntry } from '../types/ModelEntry';
 import { toDegrees, toRadians } from '../utils/math';
 import { useInspector } from './useInspector';
+import { createPointerHandlers, createKeyboardHandler } from './plannerEventHandlers';
 
 export type GizmoMode = 'position' | 'rotation' | 'scale' | null;
 
@@ -237,99 +238,22 @@ export function usePlanner(
     });
 
     // ── Pointer events ──
+    const { handlePointerMove, handlePointerTap } = createPointerHandlers({
+      scene, ground, placementSystem, selectionSystem, transformSystem,
+      gizmoManager, housesRef, gameModeActiveRef,
+    });
+
     scene.onPointerObservable.add((pointerInfo) => {
       const evt = pointerInfo.event as PointerEvent;
-
-      if (pointerInfo.type === PointerEventTypes.POINTERMOVE) {
-        if (placementSystem.isPlacing) {
-          placementSystem.updateGhost(evt.offsetX, evt.offsetY);
-        }
-        return;
-      }
-
-      if (pointerInfo.type === PointerEventTypes.POINTERTAP) {
-        if ((evt as MouseEvent).button !== 0) return;
-        // Suppress planner interactions while the game overlay is active
-        if (gameModeActiveRef.current) return;
-
-        const pick = scene.pick(evt.offsetX, evt.offsetY);
-
-        if (placementSystem.isPlacing) {
-          if (pick.pickedMesh === ground) {
-            void placementSystem.placeHouse();
-          }
-          return;
-        }
-
-        // Chặn click khi pointer đang nằm trên gizmo handle —
-        // chỉ áp dụng khi không phải ground click (move) hay house click (select).
-        // Để check sau khi biết pick target, tránh bỏ sót move khi gizmo vừa re-attach.
-        const posGizmo = gizmoManager.gizmos.positionGizmo;
-        const isGizmoHovered = posGizmo?.isHovered ?? false;
-
-        if (!pick.hit || pick.pickedMesh === null) {
-          if (!isGizmoHovered) selectionSystem.select(null);
-          return;
-        }
-
-        if (pick.pickedMesh === ground) {
-          // Ground click: di chuyển model đang chọn — không bị chặn bởi gizmo hover
-          const selected = selectionSystem.getSelected();
-          if (selected && pick.pickedPoint) {
-            transformSystem.moveHouse(selected, pick.pickedPoint);
-          } else {
-            selectionSystem.select(null);
-          }
-          return;
-        }
-
-        // Click vào gizmo handle → để gizmo tự xử lý, không select lại
-        if (isGizmoHovered) return;
-
-        const houseId = SelectionSystem.getHouseIdFromMesh(pick.pickedMesh);
-        if (houseId) {
-          const house = housesRef.current.get(houseId);
-          if (house) {
-            selectionSystem.select(house);
-            return;
-          }
-        }
-
-        selectionSystem.select(null);
-      }
+      if (pointerInfo.type === PointerEventTypes.POINTERMOVE) handlePointerMove(evt);
+      else if (pointerInfo.type === PointerEventTypes.POINTERTAP) handlePointerTap(evt);
     });
 
     // ── Keyboard events ──
-    const handleKeyDown = (e: KeyboardEvent) => {
-      const selected = selectionSystem.getSelected();
-
-      switch (e.key) {
-        case 'r':
-        case 'R':
-          if (selected) {
-            transformSystem.rotateHouse(selected);
-            setStatus('Rotated 90°');
-          }
-          break;
-
-        case 'Delete':
-        case 'Backspace':
-          if (selected) {
-            transformSystem.deleteHouse(selected);
-          }
-          break;
-
-        case 'Escape':
-          if (placementSystem.isPlacing) {
-            placementSystem.cancelPlacement();
-            setIsPlacing(false);
-            setStatus('Placement cancelled.');
-          } else {
-            selectionSystem.select(null);
-          }
-          break;
-      }
-    };
+    const handleKeyDown = createKeyboardHandler({
+      placementSystem, selectionSystem, transformSystem,
+      setIsPlacing, setStatus,
+    });
 
     window.addEventListener('keydown', handleKeyDown);
 
