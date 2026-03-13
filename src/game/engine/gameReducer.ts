@@ -350,7 +350,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
       if (pending?.type === 'buy_or_auction') phase = 'buying_property';
       else if (pending?.type === 'pay_rent') phase = 'paying_rent';
       else if (pending?.type === 'pay_tax') phase = 'paying_rent';
-      else phase = 'player_turn_start';
+      // else: stay 'landing' — player must click End Turn (or AI dispatches END_TURN)
 
       return addLog(
         { ...newState, phase, pendingAction: pending },
@@ -387,7 +387,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
           players: newPlayers,
           squares: newSquares,
           pendingAction: null,
-          phase: 'player_turn_start',
+          phase: 'landing',
         },
         player.id,
         `${player.name} mua ${square.name} với giá ${price} triệu.`,
@@ -403,7 +403,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
 
       const square = state.squares[pending.squareIndex];
       return addLog(
-        { ...state, pendingAction: null, phase: 'player_turn_start' },
+        { ...state, pendingAction: null, phase: 'landing' },
         player.id,
         `${player.name} bỏ qua ${square.name}.`,
       );
@@ -428,7 +428,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
             return p;
           });
           return addLog(
-            { ...state, players: newPlayers, pendingAction: null, phase: 'player_turn_start' },
+            { ...state, players: newPlayers, pendingAction: null, phase: 'landing' },
             player.id,
             `${player.name} trả ${amount} triệu tiền thuê tại ô ${squareIndex} cho ${landlord?.name ?? toPlayerId}.`,
           );
@@ -455,7 +455,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
               ...state,
               players: newPlayers,
               pendingAction: null,
-              phase: 'player_turn_start',
+              phase: 'landing',
               freeParkingPot: state.freeParkingPot + taxAmount,
             },
             player.id,
@@ -527,7 +527,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
         diceSum,
       );
 
-      let phase: GameState['phase'] = 'player_turn_start';
+      let phase: GameState['phase'] = 'landing';
       if (newPending?.type === 'buy_or_auction') phase = 'buying_property';
       else if (newPending?.type === 'pay_rent') phase = 'paying_rent';
       else if (newPending?.type === 'pay_tax') phase = 'paying_rent';
@@ -761,7 +761,7 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
         const updatedPlayer = freedState.players[state.currentPlayerIndex];
         const pending = buildPendingAction(newPos, updatedPlayer, freedState, diceSum);
 
-        let phase: GameState['phase'] = 'player_turn_start';
+        let phase: GameState['phase'] = 'landing';
         if (pending?.type === 'buy_or_auction') phase = 'buying_property';
         else if (pending?.type === 'pay_rent') phase = 'paying_rent';
         else if (pending?.type === 'pay_tax') phase = 'paying_rent';

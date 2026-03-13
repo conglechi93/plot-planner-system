@@ -237,8 +237,15 @@ export class BoardRenderer {
     const texture = this.buildLabelTexture(t, square, hex);
 
     // ── StandardMaterial ─────────────────────────────────────────────────────
+    //
+    // IMPORTANT: Do NOT set diffuseColor to the tile hex here.
+    // BabylonJS multiplies diffuseColor × diffuseTexture pixel-by-pixel.
+    // The DynamicTexture already paints the correct background colour; if
+    // diffuseColor is e.g. pure red (1,0,0), white text in the texture becomes
+    // (1,0,0) = red on red → completely invisible.  Use Color3.White() so the
+    // texture is displayed exactly as painted.
     const mat = new StandardMaterial(`tileMat_${t.index}`, this.scene);
-    mat.diffuseColor   = hexToColor3(hex);
+    mat.diffuseColor   = Color3.White();
     mat.diffuseTexture = texture;
     mat.emissiveColor  = hexToColor3(hex).scale(0.25);
     // Flat planes are single-sided by default in Babylon; enable back-face

@@ -208,7 +208,9 @@ export function DicePanel({ engine }: Props): React.JSX.Element {
   // 3-D animation lands, even before the reducer dispatch updates isDoubles.
   const showDoubles   = displayDice != null && displayDice[0] === displayDice[1];
 
-  const inJailPhase   = phase === 'in_jail' && isHumanTurn;
+  // Detect jail state from the player object (not from phase —
+  // a jailed player's phase is still 'player_turn_start' at the start of their turn).
+  const inJailPhase   = (currentPlayer?.inJail ?? false) && isHumanTurn;
   // Disable rolling while the 3-D animation is playing.
   const canRoll       = isHumanTurn && phase === 'player_turn_start' && !inJailPhase && !isDiceAnimating;
   const canEndTurn    = isHumanTurn && pendingAction === null &&
@@ -288,6 +290,28 @@ export function DicePanel({ engine }: Props): React.JSX.Element {
             onClick={() => engine.rollDice()}
           >
             🎲 TUNG XÚC XẮC
+          </button>
+        )}
+
+        {/* Pay rent (mandatory – shown when human lands on AI-owned property) */}
+        {isHumanTurn && pendingAction?.type === 'pay_rent' && !isDiceAnimating && (
+          <button
+            style={btnStyle(false, 'red')}
+            onClick={() => engine.dispatch({ type: 'PAY_RENT' })}
+          >
+            💸 TRẢ TIỀN THUÊ{' '}
+            {(pendingAction as { type: 'pay_rent'; amount: number }).amount} tr
+          </button>
+        )}
+
+        {/* Pay tax (mandatory – shown when human lands on a tax square) */}
+        {isHumanTurn && pendingAction?.type === 'pay_tax' && !isDiceAnimating && (
+          <button
+            style={btnStyle(false, 'red')}
+            onClick={() => engine.dispatch({ type: 'PAY_RENT' })}
+          >
+            💸 NỘP THUẾ{' '}
+            {(pendingAction as { type: 'pay_tax'; amount: number }).amount} tr
           </button>
         )}
 

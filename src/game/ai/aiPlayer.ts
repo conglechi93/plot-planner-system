@@ -163,9 +163,9 @@ export function pickAIDecision(player: Player, state: GameState): GameEvent {
     return { type: 'PAY_RENT' };
   }
 
-  // ── Pay tax: engine deducts automatically; end the turn ──────────────────
+  // ── Pay tax: PAY_RENT event handles both pay_rent and pay_tax pending actions
   if (pendingAction?.type === 'pay_tax') {
-    return { type: 'END_TURN' };
+    return { type: 'PAY_RENT' };
   }
 
   // ── Landing with nothing else to do → end turn ───────────────────────────

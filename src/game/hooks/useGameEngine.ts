@@ -493,6 +493,11 @@ export function useGameEngine(): UseGameEngineReturn {
     if (!state || !isActiveRef.current) return;
     if (state.phase === 'game_over' || state.phase === 'moving_token') return;
 
+    // Wait for any in-progress token-walk animation to finish before letting
+    // the AI act.  Without this guard the AI would dispatch END_TURN (or the
+    // next ROLL_DICE) while the token is still stepping across the board.
+    if (isTokenMoving) return;
+
     // ── Current player must be AI ─────────────────────────────────────────────
     const currentPlayer = state.players[state.currentPlayerIndex];
     if (!currentPlayer || !currentPlayer.isAI || currentPlayer.isBankrupt) return;
@@ -507,7 +512,16 @@ export function useGameEngine(): UseGameEngineReturn {
       // Guard: game might have been stopped while the timer was pending.
       if (!isActiveRef.current) return;
       const decision = pickDecision(currentPlayer, state);
-      dispatch(decision);
+
+      // Route dice-roll decisions through the animated helpers so AI players
+      // show the same 3-D dice animation as the human player.
+      if (decision.type === 'ROLL_DICE') {
+        rollDice();
+      } else if (decision.type === 'ROLL_FOR_JAIL') {
+        rollForJail();
+      } else {
+        dispatch(decision);
+      }
     }, AI_ACTION_DELAY);
 
     return () => {
@@ -516,10 +530,10 @@ export function useGameEngine(): UseGameEngineReturn {
         aiTimerRef.current = null;
       }
     };
-    // We intentionally depend on the full `state` object so that AI decisions
-    // at every phase (buying, rent, cards, …) are handled, not just turn-start.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, dispatch]);
+    // isTokenMoving is included so the effect re-runs when the walk animation
+    // ends — that is the signal for the AI to resume decision-making.
+    // rollDice / rollForJail depend on [state, dispatch], same as this effect.
+  }, [state, dispatch, rollDice, rollForJail, isTokenMoving]);
 
   // ── 3-D scene sync ────────────────────────────────────────────────────────
   //
