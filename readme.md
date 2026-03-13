@@ -30,6 +30,10 @@
 ## Cách chạy
 
 ```bash
+# Lần đầu clone (Git LFS tự pull model về)
+git lfs install
+git clone <repo-url>
+
 npm install
 npm run dev     # http://localhost:5173
 npm run build   # production build
@@ -39,7 +43,7 @@ npm run build   # production build
 
 ## Hướng dẫn chơi
 
-1. Nhấn **🎲 Chơi Cờ Tỉ Phú** (góc trên-phải)
+1. Nhấn **🎲 Chơi Cờ Tỉ Phú** (trong Toolbar bên trái)
 2. Nhập tên, chọn số AI (1–3), nhấn **BẮT ĐẦU GAME**
 3. 40 ô đất xuất hiện quanh viền, token đứng ở ô XUẤT PHÁT
 4. Nhấn **TUNG XÚC XẮC** mỗi lượt
@@ -122,3 +126,27 @@ Ngoài ra: 4 nhà ga (railroad), 2 tiện ích (utility), 3 thẻ Cơ Hội, 3 t
 | State game | Pure reducer + `useReducer` |
 | State planner | Refs + callbacks |
 | Style | Inline CSS (zero UI deps) |
+
+---
+
+## Assets 3D
+
+File model nằm trong `public/models/`, được quản lý bằng **Git LFS** và nén bằng **Draco**.
+
+| File | Trước | Sau |
+|---|---|---|
+| stylized_sakura_tree.glb | 48 MB | 13 MB |
+| maple_tree.glb | 5.5 MB | 3.5 MB |
+| dice.glb | 1.6 MB | 68 KB |
+| charmander_house.glb | 1.3 MB | 1.2 MB |
+| bus.glb | 212 KB | 140 KB |
+
+Thêm model mới:
+```bash
+# Compress trước khi commit
+npx @gltf-transform/cli optimize ten_model.glb ten_model.glb --compress draco
+
+# Git LFS tự track nhờ .gitattributes
+git add public/models/ten_model.glb
+git commit -m "feat: add <tên model>"
+```
