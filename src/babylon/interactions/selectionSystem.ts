@@ -54,20 +54,16 @@ export class SelectionSystem {
 
   /**
    * Tìm houseId từ một mesh được click.
-   * Vì tất cả children đều được tag houseId trong metadata,
-   * chỉ cần đọc mesh.metadata.houseId.
-   * Nếu không có, traverse lên parent để tìm.
+   * Traverse toàn bộ parent chain (kể cả TransformNode trung gian) vì
+   * model từ URL có thể có cấu trúc: pivot(Mesh) > rootNode(TransformNode) > childMesh.
    */
   static getHouseIdFromMesh(mesh: AbstractMesh): string | null {
-    let current: AbstractMesh | null = mesh;
+    let current = mesh as import('@babylonjs/core').Node | null;
 
     while (current) {
-      const houseId = current.metadata?.houseId as string | undefined;
+      const houseId = (current.metadata as { houseId?: string } | null)?.houseId;
       if (houseId) return houseId;
-
-      // Traverse lên parent (nếu parent là AbstractMesh)
-      current =
-        current.parent instanceof AbstractMesh ? current.parent : null;
+      current = current.parent;
     }
 
     return null;

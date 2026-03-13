@@ -74,48 +74,47 @@ export async function createModelInstance(
   position: Vector3 = Vector3.Zero()
 ): Promise<HouseInstance> {
   const id = generateId();
-  let rootMesh: AbstractMesh;
+
+  // Tạo một pivot Mesh rỗng (không có geometry) để gom tất cả root nodes.
+  // Dùng Mesh thay vì TransformNode để giữ kiểu AbstractMesh cho HouseInstance.mesh,
+  // đảm bảo getChildMeshes(), highlight, move, rotate, delete hoạt động đúng.
+  const pivot = new Mesh(`model_pivot_${id}`, scene);
+  pivot.isPickable = false;
+  pivot.rotationQuaternion = null;
 
   try {
     const container = await getContainer(scene, glbPath);
     const entries   = container.instantiateModelsToScene(undefined, true);
-    rootMesh        = entries.rootNodes[0] as AbstractMesh;
-    rootMesh.name   = `model_root_${id}`;
-    // GLB dùng quaternion – null hoá để rotation.y (Euler) hoạt động
-    rootMesh.rotationQuaternion = null;
+
+    // Parent TẤT CẢ root nodes vào pivot — khớp với cách ghost dùng pivot.
+    // Không làm bước này, các root nodes độc lập → chỉ rootNodes[0] được đặt đúng vị trí,
+    // các phần còn lại cố định tại vị trí gốc trong file.
+    entries.rootNodes.forEach(n => {
+      n.parent = pivot;
+    });
+
+    entries.animationGroups.forEach(ag => ag.stop());
   } catch {
-    // Fallback: hình hộp xám đơn giản
-    rootMesh = buildFallbackBox(scene, id);
+    // Fallback: hộp xám đơn giản gắn vào pivot
+    const box = MeshBuilder.CreateBox(`model_body_${id}`, { width: 4, height: 3, depth: 4 }, scene);
+    box.position.y = 1.5;
+    box.parent     = pivot;
+    box.isPickable = true;
+    box.material   = pbr(`model_mat_${id}`, scene, new Color3(0.55, 0.55, 0.55), 0.80);
   }
 
-  rootMesh.position = position.clone();
-  rootMesh.position.y = 0;
-  tagMeshWithHouseId(rootMesh, id);
+  pivot.position = position.clone();
+  pivot.position.y = 0;
+  tagMeshWithHouseId(pivot, id);
 
   return {
     id,
-    mesh: rootMesh,
-    type: displayName,
-    path: glbPath,
-    position: rootMesh.position,
-    rotation: rootMesh.rotation,
+    mesh:     pivot,
+    type:     displayName,
+    path:     glbPath,
+    position: pivot.position,
+    rotation: pivot.rotation,
   };
-}
-
-/** Fallback box khi GLB không load được */
-function buildFallbackBox(scene: Scene, id: string): Mesh {
-  const root = new Mesh(`model_root_${id}`, scene);
-  root.isPickable = false;
-
-  const box = MeshBuilder.CreateBox(`model_body_${id}`, { width: 4, height: 3, depth: 4 }, scene);
-  box.position.y = 1.5;
-  box.parent = root;
-  box.isPickable = true;
-
-  const mat = pbr(`model_mat_${id}`, scene, new Color3(0.55, 0.55, 0.55), 0.80);
-  box.material = mat;
-
-  return root;
 }
 
 /**
@@ -158,11 +157,13 @@ export async function createHouseInstance(
   };
 }
 
-/** Gắn houseId vào metadata của mesh và tất cả children */
-function tagMeshWithHouseId(mesh: AbstractMesh, houseId: string): void {
-  mesh.metadata = { ...mesh.metadata, houseId };
-  mesh.getChildMeshes().forEach((child) => {
-    child.metadata = { ...child.metadata, houseId };
+/** Gắn houseId vào metadata của node và TẤT CẢ descendants (kể cả TransformNode trung gian) */
+function tagMeshWithHouseId(root: AbstractMesh, houseId: string): void {
+  root.metadata = { ...root.metadata, houseId };
+  // getDescendants() trả về mọi Node con (Mesh + TransformNode + v.v.),
+  // đảm bảo selection traversal không bị dừng tại TransformNode parent trung gian.
+  root.getDescendants().forEach((node) => {
+    node.metadata = { ...node.metadata, houseId };
   });
 }
 

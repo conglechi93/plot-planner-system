@@ -5,6 +5,7 @@ import {
   StandardMaterial,
   Color3,
   AbstractMesh,
+  TransformNode,
   Vector3,
   InstantiatedEntries,
 } from '@babylonjs/core';
@@ -40,8 +41,12 @@ export class PlacementSystem {
 
   /** Box ghost – luôn có ngay, hiện trong khi chờ real ghost load */
   private boxGhost: Mesh | null = null;
-  /** Real ghost – hình dạng thật của model, bán trong suốt */
-  private realGhost: AbstractMesh | null = null;
+  /**
+   * Pivot wrapper cho real ghost.
+   * Tất cả root nodes của model đều được parent vào đây,
+   * đảm bảo di chuyển 1 node là toàn bộ model đi theo.
+   */
+  private realGhost: TransformNode | null = null;
   /** Entries trả về từ instantiateModelsToScene, dùng để dispose sạch */
   private ghostEntries: InstantiatedEntries | null = null;
 
@@ -146,27 +151,38 @@ export class PlacementSystem {
       if (!this._isPlacing || this.currentModel?.path !== model.path) return;
 
       const entries = container.instantiateModelsToScene(undefined, true);
-      const root    = entries.rootNodes[0] as AbstractMesh;
-      root.name     = 'placement_ghost_real';
-      root.rotationQuaternion = null; // force Euler mode
 
-      // Áp ghost appearance: không pickable, bán trong suốt
-      const applyGhost = (m: AbstractMesh) => {
-        m.isPickable  = false;
-        m.visibility  = 0.48;
-      };
-      applyGhost(root);
-      root.getChildMeshes().forEach(applyGhost);
+      // Tạo pivot wrapper để gom tất cả root nodes vào một node duy nhất.
+      // Không có pivot, mỗi root node nằm độc lập — di chuyển rootNodes[0]
+      // không kéo theo các root nodes còn lại → các phần bị cố định ở (0,0,0).
+      const pivot = new TransformNode('placement_ghost_pivot', this.scene);
+
+      // Ẩn ngay trước khi làm bất cứ điều gì — không để frame nào render ra
+      pivot.setEnabled(false);
+
+      // Parent tất cả root nodes vào pivot, giữ nguyên offset tương đối của chúng
+      entries.rootNodes.forEach(n => { n.parent = pivot; });
+
+      // Dừng animation groups tự động chạy (nếu có)
+      entries.animationGroups.forEach(ag => ag.stop());
+
+      // Áp ghost appearance lên tất cả mesh trong toàn bộ hierarchy
+      pivot.getChildMeshes().forEach((m: AbstractMesh) => {
+        m.isPickable = false;
+        m.visibility = 0.48;
+      });
 
       // Giữ vị trí box ghost trước khi xoá
       const savedX = this.boxGhost?.position.x ?? 0;
       const savedZ = this.boxGhost?.position.z ?? 0;
       this.destroyBoxGhost();
 
-      root.position.set(savedX, 0, savedZ);
-
-      this.realGhost    = root;
+      pivot.position.set(savedX, 0, savedZ);
+      this.realGhost    = pivot;
       this.ghostEntries = entries;
+
+      // Bật lại sau khi mọi thiết lập đã hoàn tất
+      pivot.setEnabled(true);
     } catch {
       // Load thất bại → giữ box ghost
     }
@@ -185,7 +201,10 @@ export class PlacementSystem {
     if (this.ghostEntries) {
       this.ghostEntries.dispose(); // dispose tất cả instantiated nodes
       this.ghostEntries = null;
-      this.realGhost    = null;
+    }
+    if (this.realGhost) {
+      this.realGhost.dispose(); // dispose pivot wrapper
+      this.realGhost = null;
     }
   }
 }
