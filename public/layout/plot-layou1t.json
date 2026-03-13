@@ -1,0 +1,15 @@
+{
+  "houses": [
+    {
+      "type": "Structure Horsebarn Leanto Oaklane",
+      "path": "https://d1v3nro70bdf57.cloudfront.net/production/shed/lean_to/structure_horsebarn_leanto_oaklane.babylon",
+      "position": {
+        "x": 4,
+        "y": 0,
+        "z": -5
+      },
+      "rotation": 0,
+      "scale": 1
+    }
+  ]
+}
