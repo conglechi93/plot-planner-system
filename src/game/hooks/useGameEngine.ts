@@ -103,6 +103,12 @@ export interface UseGameEngineReturn {
   isGameOver:     boolean;
   /** True while the 3-D dice-roll animation is playing. */
   isDiceAnimating: boolean;
+  /**
+   * The dice values that were just rolled, available immediately after the 3-D
+   * animation settles and before the reducer dispatch updates `state.diceValues`.
+   * Use `pendingDiceValues ?? state?.diceValues` in UI to avoid a blank flash.
+   */
+  pendingDiceValues: [number, number] | null;
   /** True while the token is walking step-by-step to its destination. */
   isTokenMoving: boolean;
 }
@@ -159,8 +165,9 @@ export function useGameEngine(): UseGameEngineReturn {
   const sceneRef = useRef<Scene | null>(null);
 
   // ── State that drives UI re-renders ───────────────────────────────────────
-  const [isDiceAnimating, setIsDiceAnimating] = useState(false);
-  const [isTokenMoving,   setIsTokenMoving]   = useState(false);
+  const [isDiceAnimating,   setIsDiceAnimating]   = useState(false);
+  const [pendingDiceValues, setPendingDiceValues] = useState<[number, number] | null>(null);
+  const [isTokenMoving,     setIsTokenMoving]     = useState(false);
 
   // ── Lifecycle: startGame ──────────────────────────────────────────────────
 
@@ -359,9 +366,13 @@ export function useGameEngine(): UseGameEngineReturn {
     if (animator) {
       setIsDiceAnimating(true);
       void animator.rollDice(d1, d2).then(async () => {
+        // Show the result faces immediately after the 3-D dice land, so the
+        // 600 ms "pause" renders ⚀⚅ instead of blank placeholder boxes.
+        setPendingDiceValues([d1, d2]);
         setIsDiceAnimating(false);
         // Keep dice result visible for 600 ms so the player can read it.
         await new Promise<void>(resolve => setTimeout(resolve, 600));
+        setPendingDiceValues(null);
         doDispatch();
       });
     } else {
@@ -454,8 +465,10 @@ export function useGameEngine(): UseGameEngineReturn {
     if (animator) {
       setIsDiceAnimating(true);
       void animator.rollDice(d1, d2).then(async () => {
+        setPendingDiceValues([d1, d2]);
         setIsDiceAnimating(false);
         await new Promise<void>(resolve => setTimeout(resolve, 600));
+        setPendingDiceValues(null);
         doDispatch();
       });
     } else {
@@ -689,6 +702,7 @@ export function useGameEngine(): UseGameEngineReturn {
     humanPlayer,
     isGameOver,
     isDiceAnimating,
+    pendingDiceValues,
     isTokenMoving,
   };
 }

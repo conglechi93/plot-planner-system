@@ -1,14 +1,95 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import type { UseGameEngineReturn } from '../../game/hooks/useGameEngine';
 
-// ─── Dice face mapping (Unicode U+2680–U+2685) ────────────────────────────────
+// ─── DieFace SVG component ────────────────────────────────────────────────────
+//
+// Renders a proper die face with pip dots, matching the face layout of dice.glb.
+// Standard pip positions (cx, cy) in a 52×52 viewBox:
+//
+//   TL(13,13)  TR(39,13)
+//   ML(13,26)  MR(39,26)   C(26,26)
+//   BL(13,39)  BR(39,39)
+//
+// Face pip map (mirrors the physical die standard):
+//   1 → [C]
+//   2 → [TR, BL]
+//   3 → [TR, C, BL]
+//   4 → [TL, TR, BL, BR]
+//   5 → [TL, TR, C, BL, BR]
+//   6 → [TL, TR, ML, MR, BL, BR]
 
-const DICE_FACES: Partial<Record<number, string>> = {
-  1: '⚀', 2: '⚁', 3: '⚂', 4: '⚃', 5: '⚄', 6: '⚅',
+const PIP_XY: Record<number, [number, number][]> = {
+  1: [[26, 26]],
+  2: [[39, 13], [13, 39]],
+  3: [[39, 13], [26, 26], [13, 39]],
+  4: [[13, 13], [39, 13], [13, 39], [39, 39]],
+  5: [[13, 13], [39, 13], [26, 26], [13, 39], [39, 39]],
+  6: [[13, 13], [39, 13], [13, 26], [39, 26], [13, 39], [39, 39]],
 };
 
-function diceFace(value: number): string {
-  return DICE_FACES[value] ?? '⚀';
+interface DieFaceProps {
+  /** 1–6: show that face.  0 or undefined: show a "?" (placeholder). */
+  value?: number;
+  /** When true, apply a spin animation to simulate tumbling in the air. */
+  spinning?: boolean;
+  /** Extra inline styles (e.g. animationDelay). */
+  style?: React.CSSProperties;
+}
+
+function DieFace({ value, spinning, style }: DieFaceProps): React.JSX.Element {
+  const pips = value != null && value >= 1 && value <= 6 ? PIP_XY[value] : null;
+
+  return (
+    <svg
+      width="52" height="52"
+      viewBox="0 0 52 52"
+      style={{
+        display: 'inline-block',
+        filter: 'drop-shadow(0 3px 6px rgba(0,0,0,0.65))',
+        animation: spinning ? 'diceSpin 0.35s linear infinite' : 'none',
+        ...style,
+      }}
+    >
+      {/* ── Die body ── */}
+      <rect x="1.5" y="1.5" width="49" height="49" rx="9" ry="9"
+        fill="#f5efe0"
+        stroke="rgba(0,0,0,0.20)"
+        strokeWidth="1.5"
+      />
+      {/* ── Pips or question mark ── */}
+      {pips
+        ? pips.map(([cx, cy], i) => (
+            <circle key={i} cx={cx} cy={cy} r="4.5" fill="#1c1c2e" />
+          ))
+        : (
+          <text
+            x="26" y="32"
+            textAnchor="middle"
+            fontSize="22"
+            fontWeight="bold"
+            fill="#9ca3af"
+          >?</text>
+        )
+      }
+    </svg>
+  );
+}
+
+// ─── Rolling face cycler ──────────────────────────────────────────────────────
+//
+// While the 3-D dice are in the air, randomly cycle the visible face value so
+// the 2-D die "tumbles" visually (same idea as the 3-D rotation).
+
+function useRollingFace(active: boolean): number {
+  const [face, setFace] = useState<number>(1);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => {
+      setFace(Math.ceil(Math.random() * 6));
+    }, 80);
+    return () => clearInterval(id);
+  }, [active]);
+  return face;
 }
 
 // ─── Styles ───────────────────────────────────────────────────────────────────
@@ -38,21 +119,6 @@ const diceRowStyle: React.CSSProperties = {
   display: 'flex',
   gap: 16,
   alignItems: 'center',
-};
-
-const diceFaceStyle: React.CSSProperties = {
-  fontSize: 48,
-  lineHeight: 1,
-  filter: 'drop-shadow(0 2px 4px rgba(0,0,0,0.5))',
-  userSelect: 'none',
-};
-
-const dicePlaceholderStyle: React.CSSProperties = {
-  width: 48,
-  height: 48,
-  background: 'rgba(255,255,255,0.08)',
-  borderRadius: 10,
-  border: '2px dashed rgba(255,255,255,0.2)',
 };
 
 const totalStyle: React.CSSProperties = {
@@ -118,7 +184,11 @@ interface Props {
 }
 
 export function DicePanel({ engine }: Props): React.JSX.Element {
-  const { state, isHumanTurn, currentPlayer, isDiceAnimating } = engine;
+  const { state, isHumanTurn, currentPlayer, isDiceAnimating, pendingDiceValues } = engine;
+
+  // Cycle random faces on both dice while the 3-D animation plays.
+  const rollingFace1 = useRollingFace(isDiceAnimating);
+  const rollingFace2 = useRollingFace(isDiceAnimating);
 
   if (!state) {
     return (
@@ -128,7 +198,15 @@ export function DicePanel({ engine }: Props): React.JSX.Element {
     );
   }
 
-  const { phase, diceValues, isDoubles, pendingAction } = state;
+  const { phase, diceValues, pendingAction } = state;
+
+  // Prefer pendingDiceValues (set right after animation ends, before dispatch)
+  // so we never flash blank placeholder boxes during the 600 ms result window.
+  const displayDice   = pendingDiceValues ?? diceValues;
+  const diceTotal     = displayDice != null ? displayDice[0] + displayDice[1] : null;
+  // Compute doubles from displayDice so the badge shows immediately after the
+  // 3-D animation lands, even before the reducer dispatch updates isDoubles.
+  const showDoubles   = displayDice != null && displayDice[0] === displayDice[1];
 
   const inJailPhase   = phase === 'in_jail' && isHumanTurn;
   // Disable rolling while the 3-D animation is playing.
@@ -137,11 +215,10 @@ export function DicePanel({ engine }: Props): React.JSX.Element {
                         (phase === 'landing' || phase === 'building') && !isDiceAnimating;
   const canRollJail   = isHumanTurn && inJailPhase && !isDiceAnimating;
   const hasJailCard   = (currentPlayer?.jailFreeCards ?? 0) > 0;
-  const diceTotal     = diceValues != null ? diceValues[0] + diceValues[1] : null;
 
-  // Spinning animation CSS for the dice placeholders during roll.
+  // Spinning animation CSS for the dice during roll.
   const spinStyle: React.CSSProperties = isDiceAnimating
-    ? { animation: 'diceSpin 0.4s linear infinite', display: 'inline-block' }
+    ? { animation: 'diceSpin 0.35s linear infinite' }
     : {};
 
   return (
@@ -157,22 +234,24 @@ export function DicePanel({ engine }: Props): React.JSX.Element {
       {/* ── Dice faces ── */}
       <div style={diceRowStyle}>
         {isDiceAnimating ? (
-          /* Show spinning placeholders while the 3-D dice are in the air */
+          /* Spin both dice with a cycling random face while 3-D dice are in the air */
           <>
-            <span style={{ ...diceFaceStyle, ...spinStyle }}>🎲</span>
+            <DieFace value={rollingFace1} spinning style={spinStyle} />
             <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 22 }}>+</span>
-            <span style={{ ...diceFaceStyle, ...spinStyle, animationDelay: '0.2s' }}>🎲</span>
+            <DieFace value={rollingFace2} spinning style={{ ...spinStyle, animationDelay: '0.17s' }} />
           </>
-        ) : diceValues != null ? (
+        ) : displayDice != null ? (
+          /* Show the exact face that landed — same pip layout as the 3-D die */
           <>
-            <span style={diceFaceStyle}>{diceFace(diceValues[0])}</span>
+            <DieFace value={displayDice[0]} />
             <span style={{ color: 'rgba(255,255,255,0.3)', fontSize: 22 }}>+</span>
-            <span style={diceFaceStyle}>{diceFace(diceValues[1])}</span>
+            <DieFace value={displayDice[1]} />
           </>
         ) : (
+          /* No roll yet — empty placeholder */
           <>
-            <div style={dicePlaceholderStyle} />
-            <div style={dicePlaceholderStyle} />
+            <DieFace />
+            <DieFace />
           </>
         )}
       </div>
@@ -188,7 +267,7 @@ export function DicePanel({ engine }: Props): React.JSX.Element {
       )}
 
       {/* ── Doubles ── */}
-      {!isDiceAnimating && isDoubles && diceValues !== null && (
+      {!isDiceAnimating && showDoubles && (
         <div style={doublesStyle}>🎲 Tung đôi! Đi thêm lượt</div>
       )}
 
