@@ -882,13 +882,20 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
  *
  * @param playerNames  Names of human players (first element is primary human).
  * @param aiStrategies One strategy per AI opponent (determines count too).
+ * @param tokenColors  Optional override colors — index 0 = human, rest = AIs.
+ *                     Falls back to PLAYER_COLORS when not provided.
  */
 export function createInitialState(
   playerNames: string[],
   aiStrategies: AIStrategy[],
+  tokenColors?: string[],
 ): GameState {
   const players: Player[] = [];
   let colorIndex = 0;
+
+  function pickColor(idx: number): string {
+    return tokenColors?.[idx] ?? PLAYER_COLORS[colorIndex % PLAYER_COLORS.length];
+  }
 
   // Human players (index 0 = primary human, all are isAI: false)
   for (let i = 0; i < playerNames.length; i++) {
@@ -904,7 +911,7 @@ export function createInitialState(
       jailFreeCards: 0,
       isBankrupt: false,
       doublesCount: 0,
-      tokenColor: PLAYER_COLORS[colorIndex % PLAYER_COLORS.length],
+      tokenColor: pickColor(colorIndex),
       ownedSquares: [],
     });
     colorIndex++;
@@ -924,7 +931,7 @@ export function createInitialState(
       jailFreeCards: 0,
       isBankrupt: false,
       doublesCount: 0,
-      tokenColor: PLAYER_COLORS[colorIndex % PLAYER_COLORS.length],
+      tokenColor: pickColor(colorIndex),
       ownedSquares: [],
     });
     colorIndex++;

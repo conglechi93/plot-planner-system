@@ -73,7 +73,7 @@ export interface UseGameEngineReturn {
 
   // ── Lifecycle ────────────────────────────────────────────────────────────
   isGameActive:   boolean;
-  startGame:      (scene: Scene, playerName: string, aiCount: number) => void;
+  startGame:      (scene: Scene, playerName: string, aiCount: number, tokenColor?: string, aiStrategies?: AIStrategy[]) => void;
   stopGame:       () => void;
 
   // ── Convenience action helpers ───────────────────────────────────────────
@@ -172,7 +172,7 @@ export function useGameEngine(): UseGameEngineReturn {
   // ── Lifecycle: startGame ──────────────────────────────────────────────────
 
   const startGame = useCallback(
-    (scene: Scene, playerName: string, aiCount: number): void => {
+    (scene: Scene, playerName: string, aiCount: number, tokenColor?: string, aiStrategies?: AIStrategy[]): void => {
       isActiveRef.current = true;
       sceneRef.current    = scene;
 
@@ -207,12 +207,20 @@ export function useGameEngine(): UseGameEngineReturn {
         };
       }
 
-      // Create initial game state with one human player + N AI opponents.
-      const strategies: AIStrategy[] = Array.from({ length: aiCount }, (_, i) => {
-        const pool: AIStrategy[] = ['aggressive', 'balanced', 'conservative'];
-        return pool[i % pool.length];
-      });
-      const initialState = createInitialState([playerName], strategies);
+      // Build strategies array — use provided strategies or cycle through defaults.
+      const strategies: AIStrategy[] = aiStrategies
+        ?? Array.from({ length: aiCount }, (_, i) => {
+          const pool: AIStrategy[] = ['aggressive', 'balanced', 'conservative'];
+          return pool[i % pool.length];
+        });
+
+      // Build token colors: human first, then AIs use default PLAYER_COLORS[1+]
+      const DEFAULT_AI_COLORS = ['#3182CE', '#D69E2E', '#805AD5'];
+      const tokenColors: string[] | undefined = tokenColor
+        ? [tokenColor, ...DEFAULT_AI_COLORS.slice(0, strategies.length)]
+        : undefined;
+
+      const initialState = createInitialState([playerName], strategies, tokenColors);
 
       // Seed the reducer.
       rawDispatch({ type: '__INIT__', initialState });

@@ -1,34 +1,20 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import type { PendingAction, Square, Player, PropertyGroup } from '../../game/types/index';
-
-// ─── Group colours ────────────────────────────────────────────────────────────
-
-const GROUP_COLORS: Record<PropertyGroup, string> = {
-  brown:      '#92400e',
-  light_blue: '#0284c7',
-  pink:       '#db2777',
-  orange:     '#ea580c',
-  red:        '#dc2626',
-  yellow:     '#ca8a04',
-  green:      '#16a34a',
-  dark_blue:  '#1d4ed8',
-};
-
-const GROUP_LABELS: Record<PropertyGroup, string> = {
-  brown:      'Nâu',
-  light_blue: 'Xanh nhạt',
-  pink:       'Hồng',
-  orange:     'Cam',
-  red:        'Đỏ',
-  yellow:     'Vàng',
-  green:      'Lục',
-  dark_blue:  'Xanh đậm',
-};
+import { GROUP_COLORS, GROUP_LABELS } from '../../game/constants/groupColors';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatMoney(amount: number): string {
   return `${amount.toLocaleString('vi-VN')} tr`;
+}
+
+/** Rung element khi không đủ tiền */
+function triggerShake(el: HTMLElement | null): void {
+  if (!el) return;
+  el.style.animation = 'none';
+  // reflow để reset animation
+  void el.offsetWidth;
+  el.style.animation = 'shake 0.4s ease';
 }
 
 // ─── Base overlay ─────────────────────────────────────────────────────────────
@@ -281,9 +267,28 @@ export function ActionDialog({
     const canAfford   = wallet >= price;
     const afterBuy    = wallet - price;
 
+    // eslint-disable-next-line react-hooks/rules-of-hooks
+    const cardRef = useRef<HTMLDivElement>(null);
+
+    function handleBuyClick() {
+      if (!canAfford) { triggerShake(cardRef.current); return; }
+      onBuy();
+    }
+
     return (
       <div style={overlayStyle}>
-        <div style={cardStyle}>
+        <style>{`
+          @keyframes shake {
+            0%,100% { transform: translateX(0); }
+            15%      { transform: translateX(-7px); }
+            30%      { transform: translateX(7px); }
+            45%      { transform: translateX(-5px); }
+            60%      { transform: translateX(5px); }
+            75%      { transform: translateX(-3px); }
+            90%      { transform: translateX(3px); }
+          }
+        `}</style>
+        <div ref={cardRef} style={cardStyle}>
 
           {/* ── Coloured header ── */}
           <div style={headerStyle(accentColor)}>
@@ -339,11 +344,17 @@ export function ActionDialog({
                   {formatMoney(wallet)}
                 </div>
               </div>
-              {canAfford && (
+              {canAfford ? (
                 <div style={{ textAlign: 'right' }}>
                   <div style={walletLabelStyle}>Sau khi mua</div>
                   <div style={statValueStyle(afterBuy < 200 ? '#fbbf24' : '#94a3b8')}>
                     {formatMoney(afterBuy)}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#f87171' }}>
+                    Thiếu {formatMoney(price - wallet)}
                   </div>
                 </div>
               )}
@@ -353,10 +364,9 @@ export function ActionDialog({
             <div style={btnRowStyle}>
               <button
                 style={buyBtnStyle(!canAfford, accentColor)}
-                disabled={!canAfford}
-                onClick={onBuy}
+                onClick={handleBuyClick}
               >
-                🏠 MUA {formatMoney(price)}
+                {canAfford ? `🏠 MUA ${formatMoney(price)}` : '🚫 Không đủ tiền'}
               </button>
               <button style={declineBtnStyle} onClick={onDecline}>
                 BỎ QUA

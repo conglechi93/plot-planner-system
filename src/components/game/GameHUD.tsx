@@ -5,6 +5,9 @@ import { ActionDialog } from './ActionDialog';
 import { CardDrawModal } from './CardDrawModal';
 import { BuildPanel } from './BuildPanel';
 import { GameLog } from './GameLog';
+import { GameOverScreen } from './GameOverScreen';
+import { TurnBanner } from './TurnBanner';
+import { ToastManager } from './ToastManager';
 import type { UseGameEngineReturn } from '../../game/hooks/useGameEngine';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -23,76 +26,37 @@ const hudRootStyle: React.CSSProperties = {
   pointerEvents: 'none',
 };
 
-/** Dark full-screen overlay for game over. */
-const gameOverOverlayStyle: React.CSSProperties = {
+const freeParkingBadgeStyle: React.CSSProperties = {
   position: 'fixed',
-  inset: 0,
-  background: 'rgba(0,0,0,0.75)',
-  zIndex: 600,
+  bottom: 102,           // just above the DicePanel (height ~86px + 16px gap)
+  left: '50%',
+  transform: 'translateX(-50%)',
+  zIndex: 300,
+  pointerEvents: 'none',
   display: 'flex',
   alignItems: 'center',
-  justifyContent: 'center',
-  pointerEvents: 'auto',
-  backdropFilter: 'blur(6px)',
-};
-
-const gameOverCardStyle: React.CSSProperties = {
-  background: 'linear-gradient(145deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%)',
-  border: '2px solid rgba(255,215,0,0.4)',
+  gap: 6,
+  background: 'rgba(8,8,18,0.88)',
+  border: '1px solid rgba(250,204,21,0.3)',
   borderRadius: 20,
-  padding: '48px 56px',
-  display: 'flex',
-  flexDirection: 'column',
-  alignItems: 'center',
-  gap: 18,
-  boxShadow: '0 20px 80px rgba(0,0,0,0.8), 0 0 60px rgba(255,215,0,0.15)',
-  color: '#fff',
-  textAlign: 'center',
-  minWidth: 320,
+  padding: '5px 14px',
+  backdropFilter: 'blur(8px)',
+  boxShadow: '0 2px 12px rgba(0,0,0,0.5), 0 0 20px rgba(250,204,21,0.08)',
 };
 
-const gameOverTitleStyle: React.CSSProperties = {
-  fontSize: 15,
-  fontWeight: 900,
-  letterSpacing: 4,
-  color: '#FFD700',
-  textTransform: 'uppercase',
-  textShadow: '0 2px 12px rgba(255,215,0,0.6)',
-};
-
-const trophyStyle: React.CSSProperties = {
-  fontSize: 64,
-  lineHeight: 1,
-  filter: 'drop-shadow(0 4px 12px rgba(255,215,0,0.5))',
-};
-
-const winnerNameStyle: React.CSSProperties = {
-  fontSize: 28,
-  fontWeight: 900,
-  color: '#fff',
-  lineHeight: 1.2,
-  textShadow: '0 2px 8px rgba(0,0,0,0.5)',
-};
-
-const winnerMoneyStyle: React.CSSProperties = {
-  fontSize: 18,
+const freeParkingLabelStyle: React.CSSProperties = {
+  fontSize: 11,
   fontWeight: 700,
-  color: '#4ade80',
+  color: 'rgba(255,255,255,0.45)',
+  letterSpacing: 0.5,
 };
 
-const winnerSubStyle: React.CSSProperties = {
+const freeParkingAmountStyle: React.CSSProperties = {
   fontSize: 13,
-  color: 'rgba(255,255,255,0.5)',
-  letterSpacing: 1,
+  fontWeight: 900,
+  color: '#facc15',
+  letterSpacing: 0.3,
 };
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-function formatMoney(amount: number): string {
-  return `${amount.toLocaleString('vi-VN')} triệu`;
-}
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export function GameHUD({ engine }: Props): React.JSX.Element {
   const {
@@ -104,6 +68,7 @@ export function GameHUD({ engine }: Props): React.JSX.Element {
     isTokenMoving,
     buyProperty,
     declineProperty,
+    stopGame,
   } = engine;
 
   // No state yet (game not started) — render nothing
@@ -120,59 +85,62 @@ export function GameHUD({ engine }: Props): React.JSX.Element {
     phase,
     pendingAction,
     winner,
+    turnCount,
+    freeParkingPot,
   } = state;
 
-  // Find winner player object for game-over screen
-  const winnerPlayer = winner
-    ? players.find(p => p.id === winner) ?? null
-    : null;
+  // ── Handlers ───────────────────────────────────────────────────────────────
 
-  // ── Handlers passed to ActionDialog ────────────────────────────────────────
-
-  function handleBuy(): void {
-    buyProperty();
-  }
-
-  function handleDecline(): void {
-    declineProperty();
-  }
-
-  /** Tax squares: dispatch PAY_RENT — the reducer handles pay_tax inside it. */
-  function handlePayTax(): void {
-    engine.payRent();
-  }
-
-  // ── Card confirm ─────────────────────────────────────────────────────────────
-
-  function handleCardConfirm(): void {
-    engine.dispatch({ type: 'APPLY_CARD' });
-  }
+  function handleBuy(): void { buyProperty(); }
+  function handleDecline(): void { declineProperty(); }
+  function handlePayTax(): void { engine.payRent(); }
+  function handleCardConfirm(): void { engine.dispatch({ type: 'APPLY_CARD' }); }
 
   return (
     <div style={hudRootStyle}>
 
-      {/* ── Player panel (top-left) ─────────────────────────────────────── */}
+      {/* ── Turn banner (top-centre, slide-in) ── */}
+      <TurnBanner
+        currentPlayer={currentPlayer}
+        turnCount={turnCount}
+        isGameOver={isGameOver}
+      />
+
+      {/* ── Toast notifications (top-right) ── */}
+      <ToastManager log={log} players={players} />
+
+      {/* ── Player panel (top-left) ── */}
       <PlayerPanel
         players={players}
         currentPlayerIndex={currentPlayerIndex}
         squares={squares}
       />
 
-      {/* ── Dice panel (bottom-centre) ──────────────────────────────────── */}
+      {/* ── Free Parking pot — chỉ hiện khi có tiền trong quỹ ── */}
+      {freeParkingPot > 0 && (
+        <div style={freeParkingBadgeStyle}>
+          <span style={{ fontSize: 14 }}>🅿️</span>
+          <span style={freeParkingLabelStyle}>Quỹ chung:</span>
+          <span style={freeParkingAmountStyle}>
+            {freeParkingPot.toLocaleString('vi-VN')} tr
+          </span>
+        </div>
+      )}
+
+      {/* ── Dice panel (bottom-centre) ── */}
       <DicePanel engine={engine} />
 
-      {/* ── Build panel (mid-right) ─────────────────────────────────────── */}
+      {/* ── Build panel (mid-right) ── */}
       <BuildPanel
         humanPlayer={humanPlayer}
         squares={squares}
         engine={engine}
       />
 
-      {/* ── Game log (bottom-right) ─────────────────────────────────────── */}
+      {/* ── Game log (bottom-right) ── */}
       <GameLog log={log} players={players} />
 
-      {/* ── Action dialog: buy / tax / rent ─────────────────────────────── */}
-      {/* Only show AFTER the token has finished walking to its destination. */}
+      {/* ── Action dialog: buy / tax / rent ── */}
       {isPlayerTurn && !isTokenMoving && pendingAction !== null && (
         <ActionDialog
           pendingAction={pendingAction}
@@ -184,8 +152,7 @@ export function GameHUD({ engine }: Props): React.JSX.Element {
         />
       )}
 
-      {/* ── Card draw modal ──────────────────────────────────────────────── */}
-      {/* Shown only after movement completes so the player can read the card. */}
+      {/* ── Card draw modal ── */}
       {!isTokenMoving && (
         <CardDrawModal
           card={lastDrawnCard}
@@ -194,30 +161,15 @@ export function GameHUD({ engine }: Props): React.JSX.Element {
         />
       )}
 
-      {/* ── Game Over overlay ────────────────────────────────────────────── */}
-      {isGameOver && winnerPlayer && (
-        <div style={gameOverOverlayStyle}>
-          <div style={gameOverCardStyle}>
-            <div style={trophyStyle}>🏆</div>
-            <div style={gameOverTitleStyle}>Game Over</div>
-            <div style={winnerNameStyle}>{winnerPlayer.name}</div>
-            <div style={winnerMoneyStyle}>
-              {formatMoney(winnerPlayer.money)}
-            </div>
-            <div style={winnerSubStyle}>ĐÃ THẮNG TRẬN ĐẤU!</div>
-          </div>
-        </div>
-      )}
-
-      {/* Edge-case: game over but no winner object resolved */}
-      {isGameOver && !winnerPlayer && winner && (
-        <div style={gameOverOverlayStyle}>
-          <div style={gameOverCardStyle}>
-            <div style={trophyStyle}>🏆</div>
-            <div style={gameOverTitleStyle}>Game Over</div>
-            <div style={winnerNameStyle}>Người chơi thắng!</div>
-          </div>
-        </div>
+      {/* ── Game Over screen ── */}
+      {isGameOver && winner && (
+        <GameOverScreen
+          players={players}
+          squares={squares}
+          winnerId={winner}
+          turnCount={turnCount}
+          onStop={stopGame}
+        />
       )}
     </div>
   );

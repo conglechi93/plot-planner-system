@@ -1,4 +1,4 @@
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useState } from 'react';
 import { SelectionProvider } from './context/SelectionProvider';
 import { useSelection } from './context/useSelection';
 import { usePlanner } from './hooks/usePlanner';
@@ -9,6 +9,8 @@ import { ModelPickerModal } from './components/ModelPickerModal';
 import { GameProvider, useGame } from './game/context/GameContext';
 import { GameModeToggle } from './components/game/GameModeToggle';
 import { GameHUD } from './components/game/GameHUD';
+import { GameLobbyScreen } from './components/game/GameLobbyScreen';
+import type { LobbyResult } from './components/game/GameLobbyScreen';
 import type { HouseInstance } from './types/HouseInstance';
 
 // ─── Inner App (has access to both SelectionContext and GameContext) ───────────
@@ -17,6 +19,8 @@ function AppInner() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { setSelectedHouse } = useSelection();
   const game = useGame();
+
+  const [lobbyOpen, setLobbyOpen] = useState(false);
 
   // Keep selection in sync with React context
   const onSelectChange = useCallback((house: HouseInstance | null) => {
@@ -30,17 +34,26 @@ function AppInner() {
     gameModeActive: game.isGameMode,
   });
 
-  // Called by GameModeToggle when user clicks "Start Game"
-  const handleStartGame = useCallback((playerName: string, aiCount: number) => {
+  // Toolbar requests to open lobby
+  const handleOpenLobby = useCallback(() => {
+    setLobbyOpen(true);
+  }, []);
+
+  // Lobby confirmed — start game
+  const handleLobbyStart = useCallback((result: LobbyResult) => {
     const scene = controls.getScene();
     if (!scene) {
       console.warn('[App] Scene not ready, cannot start game');
       return;
     }
-    // Cancel any active placement first
     if (controls.isPlacing) controls.cancelPlacement();
-    game.startGame(scene, playerName, aiCount);
+    setLobbyOpen(false);
+    game.startGame(scene, result.playerName, result.aiCount, result.tokenColor, result.aiStrategies);
   }, [controls, game]);
+
+  const handleLobbyCancel = useCallback(() => {
+    setLobbyOpen(false);
+  }, []);
 
   const handleStopGame = useCallback(() => {
     game.stopGame();
@@ -50,7 +63,7 @@ function AppInner() {
     <div className="app-layout">
       {/* ── Planner UI — hidden during game mode ── */}
       {!game.isGameMode && (
-        <Toolbar controls={controls} onStartGame={handleStartGame} />
+        <Toolbar controls={controls} onOpenLobby={handleOpenLobby} />
       )}
 
       {/* ── Babylon canvas ── */}
@@ -96,6 +109,14 @@ function AppInner() {
           <span className="key">Esc</span> → Cancel / Deselect<br />
           Scroll → Zoom &nbsp;|&nbsp; Drag → Orbit
         </div>
+      )}
+
+      {/* ── Game lobby overlay ── */}
+      {lobbyOpen && (
+        <GameLobbyScreen
+          onStart={handleLobbyStart}
+          onCancel={handleLobbyCancel}
+        />
       )}
 
       {/* ── Game Mode Toggle button (always visible) ── */}

@@ -16,6 +16,7 @@ import React, { createContext, useContext, useState, useCallback } from 'react';
 import type { Scene } from '@babylonjs/core';
 import { useGameEngine } from '../hooks/useGameEngine';
 import type { UseGameEngineReturn } from '../hooks/useGameEngine';
+import type { AIStrategy } from '../types';
 
 // ─── Context shape ────────────────────────────────────────────────────────────
 
@@ -26,7 +27,7 @@ interface GameContextValue extends UseGameEngineReturn {
   aiCount:       number;
   setAiCount:    (count: number) => void;
   // Override startGame / stopGame with versions that also toggle isGameMode
-  startGame: (scene: Scene, name: string, count: number) => void;
+  startGame: (scene: Scene, name: string, count: number, tokenColor?: string, aiStrategies?: AIStrategy[]) => void;
   stopGame:  () => void;
 }
 
@@ -51,8 +52,8 @@ export function GameProvider({
 
   // Wrap startGame: kick off the 3-D renderers then flip the mode flag.
   const startGame = useCallback(
-    (scene: Scene, name: string, count: number): void => {
-      engine.startGame(scene, name, count);
+    (scene: Scene, name: string, count: number, tokenColor?: string, aiStrategies?: AIStrategy[]): void => {
+      engine.startGame(scene, name, count, tokenColor, aiStrategies);
       setIsGameMode(true);
     },
     // engine.startGame is stable (useCallback([rawDispatch]) inside the hook).
