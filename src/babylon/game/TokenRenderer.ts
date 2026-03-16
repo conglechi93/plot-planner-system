@@ -84,19 +84,21 @@ interface CharacterConfig {
 const CHARACTER_CONFIGS: CharacterConfig[] = [
   // ── 0: Human player (VIP) ──────────────────────────────────────────────────
   {
+    // NullEngine actual: 4.60 units native  → 4.60 × 0.65 = 2.99 units (VIP)
+    // Crown sits above head: head at 4.58 × 0.65 = 2.98 → crownY = 3.2
     modelPath:    '/models/characters/RobotExpressive.glb',
     scale:        0.65,
     idleAnimName: 'Idle',
     walkAnimName: 'Walking',
     isVip:        true,
-    crownY:       1.22,
+    crownY:       3.2,
   },
   // ── 1: AI player ───────────────────────────────────────────────────────────
   {
-    // Soldier bakes root scale [0.01] (cm→m). scaleInPlace(0.65) gives net
-    // 0.0065 → geometry ~175 cm × 0.0065 ≈ 1.14 units.
+    // NullEngine actual: 1.83 units native (baked 0.01 already applied)
+    // 1.83 × 1.1 = 2.02 units
     modelPath:    '/models/characters/Soldier.glb',
-    scale:        0.65,
+    scale:        1.1,
     idleAnimName: 'Idle',
     walkAnimName: 'Walk',
     isVip:        false,
@@ -104,10 +106,10 @@ const CHARACTER_CONFIGS: CharacterConfig[] = [
   },
   // ── 2: AI player ───────────────────────────────────────────────────────────
   {
-    // Fox baked scale = 1.0. geometry Y ≈ 79 cm.
-    // 1.0 × 0.02 → 79 × 0.02 ≈ 1.58 units.
+    // NullEngine actual: 79.0 units native (geometry in cm, no baked scale)
+    // 79.0 × 0.025 = 1.98 units
     modelPath:    '/models/characters/Fox.glb',
-    scale:        0.02,
+    scale:        0.025,
     idleAnimName: 'Survey',
     walkAnimName: 'Walk',
     isVip:        false,
@@ -115,10 +117,10 @@ const CHARACTER_CONFIGS: CharacterConfig[] = [
   },
   // ── 3: AI player ───────────────────────────────────────────────────────────
   {
-    // character_2 baked scale = 1.0. geometry Y ≈ 19.5 units.
-    // 1.0 × 0.10 → 19.5 × 0.10 ≈ 1.95 units. Tune down if too tall.
+    // NullEngine actual: 2.43 units native
+    // 2.43 × 0.82 = 1.99 units
     modelPath:    '/models/characters/character_2.glb',
-    scale:        0.10,
+    scale:        0.82,
     idleAnimName: 'IDLE',
     walkAnimName: 'walk',
     isVip:        false,
