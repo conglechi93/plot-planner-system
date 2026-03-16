@@ -196,7 +196,11 @@ export class DiceAnimator {
       const n = this.nodes[i];
       if (n) {
         n.getChildMeshes(false).forEach(m => {
-          m.material?.dispose();
+          // NOTE: do NOT call m.material?.dispose() here.
+          // instantiateModelsToScene() shares materials from the AssetContainer
+          // across every instance.  Disposing the material on an instance
+          // destroys the shared asset, so subsequent rolls produce meshes with
+          // no material.  The container owns the material lifetime.
           m.dispose();
         });
         n.dispose();
