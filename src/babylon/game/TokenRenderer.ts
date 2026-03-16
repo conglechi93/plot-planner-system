@@ -1,90 +1,283 @@
 /**
- * TokenRenderer.ts
+ * TokenRenderer.ts  v2
  *
- * Creates and manages procedural player-token meshes inside the Babylon.js
- * scene.  Tokens are built from three primitives (base disc, body cylinder,
- * head sphere) parented under a TransformNode so they move as a single unit.
+ * Loads GLB character models and renders them as player tokens on the board.
  *
- * Public API used by useGameEngine:
- *   createToken(playerId, colorHex, tileIndex)
+ * Architecture
+ * ────────────
+ *   tokenRoot  (TransformNode, scale = 1, this is what gets repositioned)
+ *     ├─ modelRoot  (the GLB root returned by instantiateModelsToScene,
+ *     │              scaled to CharacterConfig.scale)
+ *     │   └─ … all GLB meshes / skeleton
+ *     ├─ crownRing   (Torus,    VIP player only)
+ *     ├─ crownSpike* (Cylinder, VIP player only – 5 pieces)
+ *     └─ vipLight    (PointLight, VIP player only)
+ *
+ * Because tokenRoot has scale = 1, the crown's .position values are directly
+ * in world units — no need to invert the model's scaling.
+ *
+ * Character assignment
+ * ────────────────────
+ *   playerIndex 0  → RobotExpressive (human / VIP)
+ *   playerIndex 1  → Soldier
+ *   playerIndex 2  → Fox
+ *   playerIndex 3  → character_2
+ *   playerIndex 4+ → wraps around (mod 4)
+ *
+ * Public API
+ * ──────────
+ *   createToken(playerId, colorHex, tileIndex, playerIndex) → Promise<void>
  *   placeTokenAtTile(playerId, tilePosition, playerIndex, totalPlayers)
  *   moveToken(playerId, from, to, tilePositions, playerIndex, total, onStep?)
- *   dispose()
- *
- * Additional helpers (available for direct use or future UI):
- *   animateMoveThrough(playerId, fromTile, steps, onComplete?)
- *   getTilePosition(tileIndex)
  *   removeToken(playerId)
+ *   dispose()
  */
 
 import {
   Scene,
+  TransformNode,
+  Vector3,
   MeshBuilder,
   PBRMaterial,
   Color3,
+  PointLight,
+  Animation,
+  AnimationGroup,
   Mesh,
-  TransformNode,
-  Vector3,
 } from '@babylonjs/core';
+import { getContainer } from '../../utils/containerCache';
 import { computeTileTransforms } from '../../game/board/tileLayout';
 import type { TileTransform } from '../../game/board/tileLayout';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Character config ─────────────────────────────────────────────────────────
 
-/** Internal record kept for each live token. */
-export interface TokenMesh {
-  root:            TransformNode;
-  playerId:        string;
-  currentPosition: number;
+interface CharacterConfig {
+  /** Path relative to /public */
+  modelPath:     string;
+  /**
+   * Scaling applied to the GLB root node so the character stands ~1.0–1.3
+   * world-units tall on the board.
+   *
+   * Quick calibration guide (open Babylon Sandbox, load the GLB, read height):
+   *   RobotExpressive : native ~1.7 m  → 0.65 × 1.7  = 1.10 units ✓
+   *   Soldier         : native ~175 cm  → 0.007 × 175 = 1.23 units ✓
+   *   Fox             : native ~0.21 m  → 5.0  × 0.21 = 1.05 units ✓
+   *   character_2     : unknown (Sketchfab export) — adjust scale as needed
+   */
+  scale:         number;
+  /** Animation-group name used while the token is standing still. */
+  idleAnimName:  string;
+  /** Animation-group name used while the token is walking between tiles. */
+  walkAnimName:  string;
+  /** When true, a golden crown + point-light are added on top. */
+  isVip:         boolean;
+  /**
+   * Y position (in tokenRoot-local / world units) where the crown base sits.
+   * Only relevant when isVip = true.
+   */
+  crownY:        number;
 }
 
-/** A tile-centre position (y is the ground-plane height of the tile surface). */
+const CHARACTER_CONFIGS: CharacterConfig[] = [
+  // ── 0: Human player (VIP) ──────────────────────────────────────────────────
+  {
+    modelPath:    '/models/characters/RobotExpressive.glb',
+    scale:        0.65,
+    idleAnimName: 'Idle',
+    walkAnimName: 'Walking',
+    isVip:        true,
+    crownY:       1.22,
+  },
+  // ── 1: AI player ───────────────────────────────────────────────────────────
+  {
+    modelPath:    '/models/characters/Soldier.glb',
+    scale:        0.007,
+    idleAnimName: 'Idle',
+    walkAnimName: 'Walk',
+    isVip:        false,
+    crownY:       0,
+  },
+  // ── 2: AI player ───────────────────────────────────────────────────────────
+  {
+    modelPath:    '/models/characters/Fox.glb',
+    scale:        5.0,
+    idleAnimName: 'Survey',
+    walkAnimName: 'Walk',
+    isVip:        false,
+    crownY:       0,
+  },
+  // ── 3: AI player ───────────────────────────────────────────────────────────
+  {
+    // Sketchfab export — scale may need adjustment after first visual test
+    modelPath:    '/models/characters/character_2.glb',
+    scale:        1.0,
+    idleAnimName: 'IDLE',
+    walkAnimName: 'walk',
+    isVip:        false,
+    crownY:       0,
+  },
+];
+
+// ─── Internal token record ────────────────────────────────────────────────────
+
+interface TokenRecord {
+  /** Wrapper node (scale 1). This is what gets repositioned on the board. */
+  tokenRoot:        TransformNode;
+  playerId:         string;
+  currentPosition:  number;
+  idleAnim:         AnimationGroup | null;
+  walkAnim:         AnimationGroup | null;
+  /** Crown + spikes materials — owned by us, safe to dispose. */
+  localMaterials:   PBRMaterial[];
+  vipLight:         PointLight | null;
+  /**
+   * Set while the GLB is still loading.  placeTokenAtTile() queues here when
+   * modelRoot is not yet attached; createToken() drains it on completion.
+   */
+  pendingPlacement: { pos: TilePosition; playerIndex: number; totalPlayers: number } | null;
+}
+
+// ─── Public types (re-exported for callers) ───────────────────────────────────
+
 export interface TilePosition {
   x: number;
   y: number;
   z: number;
 }
 
+/** @deprecated Use TokenRecord internally; kept for external callers that
+ *  reference the old interface (e.g. getToken()). */
+export interface TokenMesh {
+  root:            TransformNode;
+  playerId:        string;
+  currentPosition: number;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Parse a CSS hex string ('#RRGGBB' or 'RRGGBB') to a Babylon Color3.
- * Returns a neutral grey on error so the token is still visible.
- */
-function hexToColor3(hex: string): Color3 {
-  try {
-    const clean = hex.startsWith('#') ? hex : `#${hex}`;
-    // Color3.FromHexString requires exactly 7 characters.
-    if (clean.length !== 7) return new Color3(0.5, 0.5, 0.5);
-    return Color3.FromHexString(clean);
-  } catch {
-    return new Color3(0.5, 0.5, 0.5);
-  }
+function spreadOffset(playerIndex: number, totalPlayers: number): { dx: number; dz: number } {
+  if (totalPlayers <= 1) return { dx: 0, dz: 0 };
+  const angle  = (playerIndex / totalPlayers) * Math.PI * 2;
+  const radius = 0.5;
+  return { dx: Math.cos(angle) * radius, dz: Math.sin(angle) * radius };
 }
 
 /**
- * Compute the radial offset so that up to `total` tokens placed on the same
- * tile fan out in a tight circle without overlapping.
+ * Find an AnimationGroup by name (exact-match first, then includes-match).
+ * Case-insensitive.
  */
-function spreadOffset(
-  playerIndex: number,
-  totalPlayers: number,
-): { dx: number; dz: number } {
-  if (totalPlayers <= 1) return { dx: 0, dz: 0 };
-  const angle = (playerIndex / totalPlayers) * Math.PI * 2;
-  const radius = 0.5; // units – small enough to stay within a 3.33-wide tile
-  return {
-    dx: Math.cos(angle) * radius,
-    dz: Math.sin(angle) * radius,
-  };
+function findAnim(groups: AnimationGroup[], name: string): AnimationGroup | null {
+  const q = name.toLowerCase();
+  return (
+    groups.find(ag => ag.name.toLowerCase() === q) ??
+    groups.find(ag => ag.name.toLowerCase().includes(q)) ??
+    null
+  );
+}
+
+// ─── VIP decoration ───────────────────────────────────────────────────────────
+
+function buildCrown(
+  scene:       Scene,
+  parent:      TransformNode,
+  crownY:      number,
+  localMats:   PBRMaterial[],
+): PointLight {
+  // Shared gold material (owned by us, not by any container)
+  const gold = new PBRMaterial('vip_gold', scene);
+  gold.albedoColor   = new Color3(1.0, 0.82, 0.1);
+  gold.metallic      = 1.0;
+  gold.roughness     = 0.15;
+  gold.emissiveColor = new Color3(0.55, 0.44, 0.04);
+  localMats.push(gold);
+
+  // ── Crown ring ────────────────────────────────────────────────────────────
+  const ring = MeshBuilder.CreateTorus(
+    'vip_ring',
+    { diameter: 0.44, thickness: 0.065, tessellation: 32 },
+    scene,
+  ) as Mesh;
+  ring.parent      = parent;
+  ring.position.y  = crownY;
+  ring.material    = gold;
+  ring.isPickable  = false;
+
+  // Slow rotation animation on the ring
+  const rotAnim = new Animation(
+    'crownSpin', 'rotation.y', 30,
+    Animation.ANIMATIONTYPE_FLOAT,
+    Animation.ANIMATIONLOOPMODE_CYCLE,
+  );
+  rotAnim.setKeys([
+    { frame:  0, value: 0 },
+    { frame: 90, value: Math.PI * 2 },
+  ]);
+  ring.animations = [rotAnim];
+  scene.beginAnimation(ring, 0, 90, true, 0.25); // very slow spin
+
+  // ── Crown spikes (5 tapered cylinders arranged radially) ──────────────────
+  const SPIKE_COUNT = 5;
+  for (let i = 0; i < SPIKE_COUNT; i++) {
+    const angle = (i / SPIKE_COUNT) * Math.PI * 2;
+    const spike = MeshBuilder.CreateCylinder(
+      `vip_spike_${i}`,
+      { diameterTop: 0.02, diameterBottom: 0.08, height: 0.22, tessellation: 8 },
+      scene,
+    ) as Mesh;
+    spike.parent     = parent;
+    spike.position.x = Math.cos(angle) * 0.17;
+    spike.position.z = Math.sin(angle) * 0.17;
+    spike.position.y = crownY + 0.09;
+    spike.material   = gold;
+    spike.isPickable = false;
+  }
+
+  // ── Soft golden point light ───────────────────────────────────────────────
+  const light       = new PointLight('vip_light', Vector3.Zero(), scene);
+  light.parent      = parent;
+  light.position.y  = crownY + 0.35;
+  light.diffuse     = new Color3(1.0, 0.88, 0.4);
+  light.specular    = new Color3(0.5, 0.44, 0.2);
+  light.intensity   = 0.85;
+  light.range       = 9;
+
+  return light;
+}
+
+// ─── Procedural fallback (original token shape) ───────────────────────────────
+
+function buildProceduralToken(
+  scene:     Scene,
+  parent:    TransformNode,
+  color:     Color3,
+  localMats: PBRMaterial[],
+): void {
+  const mat          = new PBRMaterial('tokenMatFallback', scene);
+  mat.albedoColor    = color;
+  mat.metallic       = 0.3;
+  mat.roughness      = 0.6;
+  mat.emissiveColor  = color.scale(0.12);
+  localMats.push(mat);
+
+  const base = MeshBuilder.CreateCylinder('token_base', { diameter: 0.8, height: 0.15, tessellation: 24 }, scene) as Mesh;
+  const body = MeshBuilder.CreateCylinder('token_body', { diameter: 0.4, height: 0.70, tessellation: 16 }, scene) as Mesh;
+  const head = MeshBuilder.CreateSphere  ('token_head', { diameter: 0.35, segments: 14 },                  scene) as Mesh;
+
+  base.parent     = parent;  base.position.y = 0.075;
+  body.parent     = parent;  body.position.y = 0.475;
+  head.parent     = parent;  head.position.y = 1.025;
+
+  [base, body, head].forEach(m => {
+    m.material      = mat;
+    m.isPickable    = false;
+    m.receiveShadows = false;
+  });
 }
 
 // ─── TokenRenderer ────────────────────────────────────────────────────────────
 
 export class TokenRenderer {
-  private readonly tokens: Map<string, TokenMesh> = new Map();
-
-  /** Cached tile-transform array computed once at construction time. */
+  private readonly tokens:     Map<string, TokenRecord> = new Map();
   private readonly transforms: TileTransform[];
 
   constructor(private readonly scene: Scene) {
@@ -94,118 +287,128 @@ export class TokenRenderer {
   // ── Token creation ────────────────────────────────────────────────────────
 
   /**
-   * Build a three-part procedural token (base → body → head) for the given
-   * player and place it at `tileIndex` immediately.
+   * Create an animated character token for `playerId` and place it at
+   * `tileIndex`.  Loading is asynchronous; `placeTokenAtTile` calls made
+   * before the GLB resolves are queued and applied automatically.
    *
-   * Shape spec:
-   *   base  – Cylinder, radius 0.4, height 0.15,  y = 0.075
-   *   body  – Cylinder, radius 0.2, height 0.70,  y = 0.475
-   *   head  – Sphere,   diameter 0.35,            y = 1.025
+   * @param playerIndex  0 = human (VIP robot), 1–3 = AI characters.
    */
-  createToken(playerId: string, colorHex: string, tileIndex: number): void {
-    // Remove any pre-existing token for this player.
+  createToken(
+    playerId:    string,
+    colorHex:    string,
+    tileIndex:   number,
+    playerIndex: number = 0,
+  ): void {
     this.removeToken(playerId);
 
-    const root  = new TransformNode(`token_root_${playerId}`, this.scene);
-    const color = hexToColor3(colorHex);
+    const config      = CHARACTER_CONFIGS[playerIndex % CHARACTER_CONFIGS.length]!;
+    const localMats:  PBRMaterial[] = [];
+    const tokenRoot   = new TransformNode(`token_root_${playerId}`, this.scene);
 
-    // ── PBR material ──────────────────────────────────────────────────────
-    const mat = new PBRMaterial(`tokenMat_${playerId}`, this.scene);
-    mat.albedoColor  = color;
-    mat.metallic     = 0.3;
-    mat.roughness    = 0.6;
-    // A gentle emissive so the token is identifiable even in unlit areas.
-    mat.emissiveColor = color.scale(0.12);
-
-    // ── Base disc ─────────────────────────────────────────────────────────
-    const base = MeshBuilder.CreateCylinder(
-      `token_base_${playerId}`,
-      { diameter: 0.8, height: 0.15, tessellation: 24 },
-      this.scene,
-    ) as Mesh;
-    base.parent     = root;
-    base.position.y = 0.075; // half of height = rests flat on tile surface
-
-    // ── Body cylinder ─────────────────────────────────────────────────────
-    const body = MeshBuilder.CreateCylinder(
-      `token_body_${playerId}`,
-      { diameter: 0.4, height: 0.70, tessellation: 16 },
-      this.scene,
-    ) as Mesh;
-    body.parent     = root;
-    body.position.y = 0.475; // base-top (0.15) + body-half (0.35) = 0.50 ≈ spec 0.475
-
-    // ── Head sphere ───────────────────────────────────────────────────────
-    const head = MeshBuilder.CreateSphere(
-      `token_head_${playerId}`,
-      { diameter: 0.35, segments: 14 },
-      this.scene,
-    ) as Mesh;
-    head.parent     = root;
-    head.position.y = 1.025; // body-top (0.15+0.70=0.85) + head-radius (0.175) ≈ spec 1.025
-
-    // Assign shared material and configure picking
-    ([base, body, head] as Mesh[]).forEach(m => {
-      m.material       = mat;
-      m.isPickable     = false;
-      m.receiveShadows = false;
-    });
-
+    // Place immediately at tile so the wrapper is in the right position even
+    // before the GLB loads.
     const tilePos = this.getTilePosition(tileIndex);
-    root.position.copyFrom(tilePos);
+    tokenRoot.position.copyFrom(tilePos);
 
-    this.tokens.set(playerId, { root, playerId, currentPosition: tileIndex });
+    const record: TokenRecord = {
+      tokenRoot,
+      playerId,
+      currentPosition:  tileIndex,
+      idleAnim:         null,
+      walkAnim:         null,
+      localMaterials:   localMats,
+      vipLight:         null,
+      pendingPlacement: null,
+    };
+    this.tokens.set(playerId, record);
+
+    // ── Async GLB load ──────────────────────────────────────────────────────
+    void (async () => {
+      try {
+        const container = await getContainer(this.scene, config.modelPath);
+
+        // Guard: token might have been removed while we were loading
+        if (!this.tokens.has(playerId)) return;
+
+        const inst      = container.instantiateModelsToScene(
+          n => `token_${playerId}_${n}`,
+          true, // cloneAnimations — each instance gets independent animation state
+        );
+        const modelRoot = inst.rootNodes[0] as TransformNode | undefined;
+        if (!modelRoot) throw new Error('No root node in GLB');
+
+        // Attach model under tokenRoot, apply per-character scale
+        modelRoot.parent = tokenRoot;
+        modelRoot.scaling.setAll(config.scale);
+
+        // ── Animations ─────────────────────────────────────────────────────
+        record.idleAnim = findAnim(inst.animationGroups, config.idleAnimName);
+        record.walkAnim = findAnim(inst.animationGroups, config.walkAnimName);
+
+        // Stop all animation groups first, then start idle on loop
+        inst.animationGroups.forEach(ag => ag.stop());
+        record.idleAnim?.start(true, 1.0);
+
+        // ── VIP crown ──────────────────────────────────────────────────────
+        if (config.isVip) {
+          record.vipLight = buildCrown(this.scene, tokenRoot, config.crownY, localMats);
+        }
+
+        // ── Apply any queued placement ──────────────────────────────────────
+        if (record.pendingPlacement) {
+          const { pos, playerIndex: pi, totalPlayers } = record.pendingPlacement;
+          this._applyPlacement(record, pos, pi, totalPlayers);
+          record.pendingPlacement = null;
+        }
+
+      } catch (err) {
+        console.warn(`[TokenRenderer] Failed to load ${config.modelPath}, using fallback`, err);
+        if (!this.tokens.has(playerId)) return;
+
+        const colorVal = this._hexToColor3(colorHex);
+        buildProceduralToken(this.scene, tokenRoot, colorVal, localMats);
+      }
+    })();
   }
 
   // ── Placement ─────────────────────────────────────────────────────────────
 
-  /**
-   * Instantly teleport a token to a tile.
-   * `playerIndex` and `totalPlayers` determine the radial offset so multiple
-   * tokens on the same square don't z-fight.
-   */
   placeTokenAtTile(
     playerId:     string,
     tilePosition: TilePosition,
     playerIndex:  number,
     totalPlayers: number,
   ): void {
-    const token = this.tokens.get(playerId);
-    if (!token) return;
+    const record = this.tokens.get(playerId);
+    if (!record) return;
 
+    this._applyPlacement(record, tilePosition, playerIndex, totalPlayers);
+  }
+
+  private _applyPlacement(
+    record:       TokenRecord,
+    pos:          TilePosition,
+    playerIndex:  number,
+    totalPlayers: number,
+  ): void {
     const { dx, dz } = spreadOffset(playerIndex, totalPlayers);
-    // y: tile surface is at 0.10 (tile height 0.10, centre at 0.05 above ground).
-    // Token root sits at tile surface so the base bottom rests at y = 0.10.
-    token.root.position.set(
-      tilePosition.x + dx,
-      0.10, // always on the tile surface, regardless of TilePosition.y
-      tilePosition.z + dz,
-    );
-    token.currentPosition = this.positionToIndex(tilePosition);
+    record.tokenRoot.position.set(pos.x + dx, 0.10, pos.z + dz);
+    record.currentPosition = this._positionToIndex(pos);
   }
 
   // ── Animated movement ─────────────────────────────────────────────────────
 
-  /**
-   * Step the token from `fromPosition` to `toPosition` one tile at a time,
-   * waiting 150 ms between each step (compatible with the existing async API).
-   *
-   * Wraps around the 40-tile board correctly.
-   * Calls `onStepComplete(currentTileIndex)` after each step if provided.
-   *
-   * Returns a Promise that resolves when the token has reached its destination.
-   */
   async moveToken(
-    playerId:       string,
-    fromPosition:   number,
-    toPosition:     number,
-    tilePositions:  TilePosition[],
-    playerIndex:    number,
-    totalPlayers:   number,
+    playerId:        string,
+    fromPosition:    number,
+    toPosition:      number,
+    tilePositions:   TilePosition[],
+    playerIndex:     number,
+    totalPlayers:    number,
     onStepComplete?: (pos: number) => void,
   ): Promise<void> {
-    const token = this.tokens.get(playerId);
-    if (!token) return;
+    const record = this.tokens.get(playerId);
+    if (!record) return;
 
     const BOARD_SIZE = 40;
     const steps =
@@ -213,120 +416,126 @@ export class TokenRenderer {
         ? toPosition - fromPosition
         : BOARD_SIZE - fromPosition + toPosition;
 
+    // Switch to walk animation
+    record.idleAnim?.pause();
+    record.walkAnim?.start(true, 1.0);
+
     for (let step = 1; step <= steps; step++) {
       const currentTile = (fromPosition + step) % BOARD_SIZE;
       const pos = tilePositions[currentTile];
       if (pos) {
-        this.placeTokenAtTile(playerId, pos, playerIndex, totalPlayers);
+        this._applyPlacement(record, pos, playerIndex, totalPlayers);
         onStepComplete?.(currentTile);
       }
       await new Promise<void>(resolve => setTimeout(resolve, 500));
     }
 
-    token.currentPosition = toPosition;
+    // Return to idle
+    record.walkAnim?.stop();
+    record.idleAnim?.start(true, 1.0);
+    record.currentPosition = toPosition;
   }
 
-  /**
-   * Animate `steps` forward from `fromTile` using recursive setTimeout
-   * (350 ms per step) so the render loop is never blocked.
-   *
-   * @param onComplete  Called after the final step lands.
-   */
   animateMoveThrough(
     playerId:    string,
     fromTile:    number,
     steps:       number,
     onComplete?: () => void,
   ): void {
-    const BOARD_SIZE = 40;
-    const token = this.tokens.get(playerId);
-    if (!token || steps <= 0) {
-      onComplete?.();
-      return;
-    }
+    const BOARD_SIZE  = 40;
+    const record      = this.tokens.get(playerId);
+    if (!record || steps <= 0) { onComplete?.(); return; }
 
-    const STEP_DELAY = 500; // ms
+    record.idleAnim?.pause();
+    record.walkAnim?.start(true, 1.0);
 
-    const step = (remaining: number, currentTile: number): void => {
+    const STEP_DELAY = 500;
+
+    const advance = (remaining: number, currentTile: number): void => {
       if (remaining === 0) {
-        token.currentPosition = currentTile;
+        record.currentPosition = currentTile;
+        record.walkAnim?.stop();
+        record.idleAnim?.start(true, 1.0);
         onComplete?.();
         return;
       }
-
       const nextTile = (currentTile + 1) % BOARD_SIZE;
-      const pos = this.getTilePosition(nextTile);
-
-      // Preserve the current spread so the token doesn't jump relative to
-      // other tokens.  We snap on the X/Z plane; use index 0 spread as default.
-      token.root.position.set(pos.x, 0.10, pos.z);
-
-      setTimeout(() => step(remaining - 1, nextTile), STEP_DELAY);
+      const pos      = this.getTilePosition(nextTile);
+      record.tokenRoot.position.set(pos.x, 0.10, pos.z);
+      setTimeout(() => advance(remaining - 1, nextTile), STEP_DELAY);
     };
 
-    // First step fires after one delay, matching the async version's feel.
-    setTimeout(() => step(steps, fromTile), STEP_DELAY);
+    setTimeout(() => advance(steps, fromTile), STEP_DELAY);
   }
 
   // ── Position helpers ──────────────────────────────────────────────────────
 
-  /**
-   * Return the world-space Vector3 centre of tile `tileIndex`.
-   * Falls back to the GO corner if the index is out of range.
-   */
   getTilePosition(tileIndex: number): Vector3 {
     const t: TileTransform | undefined = this.transforms[tileIndex];
-    if (!t) {
-      // GO corner fallback
-      return new Vector3(20, 0.10, -20);
-    }
-    return new Vector3(t.position.x, 0.10, t.position.z);
+    return t
+      ? new Vector3(t.position.x, 0.10, t.position.z)
+      : new Vector3(20, 0.10, -20);
   }
 
-  /**
-   * Reverse-look-up a tile index from a TilePosition object (used to keep
-   * `currentPosition` accurate after `placeTokenAtTile` calls).
-   */
-  private positionToIndex(pos: TilePosition): number {
+  private _positionToIndex(pos: TilePosition): number {
     for (let i = 0; i < this.transforms.length; i++) {
       const t = this.transforms[i];
       if (!t) continue;
-      if (
-        Math.abs(t.position.x - pos.x) < 0.01 &&
-        Math.abs(t.position.z - pos.z) < 0.01
-      ) {
+      if (Math.abs(t.position.x - pos.x) < 0.01 && Math.abs(t.position.z - pos.z) < 0.01) {
         return i;
       }
     }
     return 0;
   }
 
+  private _hexToColor3(hex: string): Color3 {
+    try {
+      const clean = hex.startsWith('#') ? hex : `#${hex}`;
+      if (clean.length !== 7) return new Color3(0.5, 0.5, 0.5);
+      return Color3.FromHexString(clean);
+    } catch {
+      return new Color3(0.5, 0.5, 0.5);
+    }
+  }
+
   // ── Retrieval ─────────────────────────────────────────────────────────────
 
-  /** Return the internal record for a player's token (if any). */
   getToken(playerId: string): TokenMesh | undefined {
-    return this.tokens.get(playerId);
+    const r = this.tokens.get(playerId);
+    if (!r) return undefined;
+    return { root: r.tokenRoot, playerId: r.playerId, currentPosition: r.currentPosition };
   }
 
   // ── Removal ───────────────────────────────────────────────────────────────
 
-  /**
-   * Destroy a single player's token and its children, freeing GPU memory.
-   */
   removeToken(playerId: string): void {
-    const token = this.tokens.get(playerId);
-    if (!token) return;
-    // Dispose child meshes (base, body, head) and their materials.
-    token.root.getChildMeshes().forEach(m => m.dispose(false, true));
-    token.root.dispose();
+    const record = this.tokens.get(playerId);
+    if (!record) return;
+
+    // Stop animations
+    record.idleAnim?.stop();
+    record.walkAnim?.stop();
+
+    // Dispose VIP light
+    record.vipLight?.dispose();
+
+    // Dispose child meshes.
+    // IMPORTANT: do NOT dispose materials on the modelRoot children — those
+    // materials live in the AssetContainer and are shared across instances.
+    // Only dispose our locally-created crown/fallback materials (localMaterials).
+    record.tokenRoot.getChildMeshes(false).forEach(m => {
+      m.dispose(false, false); // false, false = keep material references alive
+    });
+
+    // Now it is safe to dispose our own locally-created materials.
+    record.localMaterials.forEach(mat => mat.dispose());
+
+    record.tokenRoot.dispose();
     this.tokens.delete(playerId);
   }
 
-  /**
-   * Destroy all tokens.  Called by useGameEngine.stopGame().
-   */
   dispose(): void {
-    this.tokens.forEach((_token, id) => this.removeToken(id));
+    this.tokens.forEach((_r, id) => this.removeToken(id));
     this.tokens.clear();
   }
 }

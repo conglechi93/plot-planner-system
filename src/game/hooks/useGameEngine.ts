@@ -237,7 +237,8 @@ export function useGameEngine(): UseGameEngineReturn {
       const totalPlayers = initialState.players.length;
 
       initialState.players.forEach((player: Player, idx: number) => {
-        tokenRenderer.createToken(player.id, player.tokenColor, 0);
+        // idx doubles as playerIndex: 0 = human (VIP robot), 1–3 = AI characters
+        tokenRenderer.createToken(player.id, player.tokenColor, 0, idx);
         tokenRenderer.placeTokenAtTile(player.id, goPos, idx, totalPlayers);
       });
     },
