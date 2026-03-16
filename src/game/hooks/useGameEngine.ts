@@ -195,6 +195,10 @@ export function useGameEngine(): UseGameEngineReturn {
       // Prime the dice asset cache in the background (non-blocking).
       void diceAnimator.preload();
 
+      // Prime the barn house model cache so it is ready before the first
+      // house is built (avoids a visible pop-in on the very first BUILD_HOUSE).
+      houseRenderer.preload();
+
       // Snapshot the camera's current resting position so we can return to it
       // after every token walk animation.
       const cam = scene.activeCamera;

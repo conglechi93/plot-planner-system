@@ -1,25 +1,23 @@
 /**
  * HouseHotelRenderer.ts
  *
- * Manages the 3-D house and hotel meshes shown on top of property tiles in the
- * Cờ Tỉ Phú (Vietnamese Monopoly) Babylon.js scene.
+ * Manages the 3-D house and hotel meshes shown on top of property tiles.
  *
- * Rules:
- *   square.houses 1-4 → render that many green house boxes in a row
- *   square.houses 5   → render one red hotel box
- *   square.houses 0   → clear all buildings from that square
+ * Houses (1-4):  load the barn .babylon model, one instance per house.
+ * Hotel  (5):    a single red box (kept simple / distinct from houses).
  *
- * Houses are positioned on top of the tile surface (tile box is 0.10 high,
- * sitting with its base on the ground plane, so its top face is at y = 0.10).
- * Buildings sit at y = 0.10 + half their own height.
+ * Asset loading is asynchronous.  `updateSquareBuildings` fires-and-forgets
+ * the load so the public API stays synchronous and the caller (useGameEngine)
+ * doesn't need to be changed.  A generation counter prevents stale async
+ * results from overwriting a newer synchronous update.
  *
- * Public API used by useGameEngine:
+ * Public API (unchanged from previous version):
  *   updateSquareBuildings(squareIndex, houses)
+ *   updateBuildings(square)
  *   clearSquareBuildings(squareIndex)
  *   clearAll()
- *
- * Extra method aliased for the full spec:
- *   updateBuildings(square: Square)   — takes the whole Square object
+ *   preload()           ← new: warms up the barn asset cache
+ *   dispose()
  */
 
 import {
@@ -30,121 +28,75 @@ import {
   Mesh,
   Vector3,
 } from '@babylonjs/core';
+import { getContainer } from '../../utils/containerCache';
 import { computeTileTransforms } from '../../game/board/tileLayout';
 import type { TileTransform } from '../../game/board/tileLayout';
 import type { Square } from '../../game/types';
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Model URL & scale ────────────────────────────────────────────────────────
 
-/** Width / depth of a single house cube (units). */
-const HOUSE_SIZE  = 0.4;
-/** Height of a single house cube (units). */
-const HOUSE_HEIGHT = 0.5;
+const BARN_URL = 'https://d1v3nro70bdf57.cloudfront.net/dev/shed/barn/barn-v3.babylon';
 
-/** Width / depth of the hotel cube (units). */
-const HOTEL_SIZE  = 0.8;
-/** Height of the hotel cube (units). */
+/**
+ * Uniform scale applied to each barn instance.
+ * Tweak this value if the barn appears too large or too small on the board.
+ * At 0.04 the barn sits at roughly the same visual scale as the old 0.4×0.5
+ * box placeholder.
+ */
+const BARN_SCALE = 0.04;
+
+// ─── Hotel box constants (kept as-is) ─────────────────────────────────────────
+
+const HOTEL_SIZE   = 0.8;
 const HOTEL_HEIGHT = 0.7;
-
-/** Gap between consecutive house cubes along the tile edge (units). */
-const HOUSE_GAP = 0.45;
 
 /** Tile surface height (ground + tile box height). */
 const TILE_SURFACE_Y = 0.10;
 
-// ─── Materials (created lazily, shared across all buildings) ──────────────────
+// ─── Shared hotel material (lazy, module-level singleton) ─────────────────────
 
-let _houseMat: StandardMaterial | null = null;
 let _hotelMat: StandardMaterial | null = null;
 
 function isMaterialDead(mat: StandardMaterial | null): boolean {
   if (!mat) return true;
-  // Babylon's Material base class sets `_isDisposed` (private) but exposes the
-  // state only via `dispose()`.  We detect disposal by checking if the scene
-  // can still find the material by name – a disposed material is removed from
-  // the scene's material list.
-  try {
-    return !mat.getScene().materials.includes(mat);
-  } catch {
-    return true;
-  }
-}
-
-function getHouseMaterial(scene: Scene): StandardMaterial {
-  if (isMaterialDead(_houseMat)) {
-    _houseMat = new StandardMaterial('sharedHouseMat', scene);
-    _houseMat.diffuseColor  = new Color3(0.05, 0.65, 0.05); // bright green
-    _houseMat.emissiveColor = new Color3(0.00, 0.10, 0.00);
-  }
-  return _houseMat as StandardMaterial;
+  try { return !mat.getScene().materials.includes(mat); } catch { return true; }
 }
 
 function getHotelMaterial(scene: Scene): StandardMaterial {
   if (isMaterialDead(_hotelMat)) {
     _hotelMat = new StandardMaterial('sharedHotelMat', scene);
-    _hotelMat.diffuseColor  = new Color3(0.85, 0.05, 0.05); // vivid red
+    _hotelMat.diffuseColor  = new Color3(0.85, 0.05, 0.05);
     _hotelMat.emissiveColor = new Color3(0.12, 0.00, 0.00);
   }
   return _hotelMat as StandardMaterial;
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ─── Spread-axis helper ───────────────────────────────────────────────────────
 
-/**
- * Determine which world axis runs *along* the tile face so buildings can be
- * spread out on a single row.  The spread axis is the one perpendicular to the
- * outward-facing normal of the edge the tile sits on.
- *
- * Board layout (top-down):
- *   bottom edge (indices 1-9)  : tiles face +z (south), spread along X
- *   left edge   (indices 11-19): tiles face -x (west),  spread along Z
- *   top edge    (indices 21-29): tiles face -z (north),  spread along X
- *   right edge  (indices 31-39): tiles face +x (east),   spread along Z
- *   corners                    : spread along X as default
- *
- * We detect the edge by looking at which absolute coordinate is larger.
- */
 function buildingSpreadAxis(t: TileTransform): 'x' | 'z' {
-  // Corner tiles and tiles where |x| ≈ |z| default to X.
-  if (Math.abs(t.position.z) > Math.abs(t.position.x)) {
-    // Bottom or top edge — tile extends left/right, so spread along X.
-    return 'x';
-  }
-  // Left or right edge — tile extends up/down, so spread along Z.
+  if (Math.abs(t.position.z) > Math.abs(t.position.x)) return 'x';
   return 'z';
 }
 
+// ─── World-space position for one building slot ───────────────────────────────
+
+/** Gap between barn instances along the tile long axis. */
+const BARN_SLOT_GAP = 0.45;
+
 /**
- * Compute the world-space position for one building on a tile.
- *
- * Buildings are placed *inward* from the outer edge by `inwardDist` so they
- * are clearly visible when looking down from a top camera, and spread along
- * the tile's long axis.
- *
- * @param t           TileTransform for the square.
- * @param buildingIdx 0-based index within the row (0 = leftmost).
- * @param totalCount  Total buildings in the row (used for centring).
- * @param isHotel     True when rendering a hotel.
+ * Returns the X/Z centre for building slot `buildingIdx` on tile `t`.
+ * Y is always TILE_SURFACE_Y so the caller can decide the vertical offset
+ * per model type.
  */
-function buildingWorldPos(
+function buildingSlotPos(
   t:            TileTransform,
   buildingIdx:  number,
   totalCount:   number,
-  isHotel:      boolean,
+  spreadStep:   number,
 ): Vector3 {
-  const bHeight = isHotel ? HOTEL_HEIGHT : HOUSE_HEIGHT;
-  const y = TILE_SURFACE_Y + bHeight / 2; // bottom of building rests on tile top face
-
-  // How far from the tile's centre toward the inner board.
-  // We push inward by 1/4 of the tile depth so buildings don't hang off the
-  // outer edge into empty space.
   const inwardDist = t.tileDepth * 0.20;
-
-  // Spread offset along the tile's long axis (centred on the tile centre).
-  const spreadStep = isHotel ? 0 : HOUSE_GAP;
   const totalSpan  = (totalCount - 1) * spreadStep;
   const offset     = buildingIdx * spreadStep - totalSpan / 2;
-
   const spreadAxis = buildingSpreadAxis(t);
 
   let wx: number;
@@ -152,29 +104,30 @@ function buildingWorldPos(
 
   if (spreadAxis === 'x') {
     wx = t.position.x + offset;
-    // Inward for bottom-edge tiles means +z, for top-edge tiles means -z.
     const inwardZ = t.position.z < 0 ? inwardDist : -inwardDist;
     wz = t.position.z + inwardZ;
   } else {
-    // Left / right edge
     const inwardX = t.position.x < 0 ? inwardDist : -inwardDist;
     wx = t.position.x + inwardX;
     wz = t.position.z + offset;
   }
 
-  return new Vector3(wx, y, wz);
+  return new Vector3(wx, TILE_SURFACE_Y, wz);
 }
 
 // ─── HouseHotelRenderer ───────────────────────────────────────────────────────
 
 export class HouseHotelRenderer {
-  /**
-   * Maps square index → array of building meshes currently displayed.
-   * Hotels produce exactly one mesh; house rows produce 1-4 meshes.
-   */
-  private readonly buildingMeshes: Map<number, Mesh[]> = new Map();
+  /** squareIndex → array of root pivot Mesh objects currently in the scene. */
+  private readonly buildingMeshes = new Map<number, Mesh[]>();
 
-  /** Cached tile transforms (computed once). */
+  /**
+   * Monotonic counter per square.  Incremented on every `updateSquareBuildings`
+   * call so that a slow async load can detect it has been superseded.
+   */
+  private readonly generations = new Map<number, number>();
+
+  /** Pre-computed tile transforms (computed once at construction time). */
   private readonly transforms: TileTransform[];
 
   constructor(private readonly scene: Scene) {
@@ -184,112 +137,188 @@ export class HouseHotelRenderer {
   // ── Public API ────────────────────────────────────────────────────────────
 
   /**
-   * Synchronise the 3-D buildings on square `squareIndex` with `houses`.
-   * Existing meshes are always discarded first so the call is idempotent.
+   * Warm up the barn model cache so it is ready before the first house is
+   * built.  Call this right after constructing the renderer.
+   */
+  preload(): void {
+    void getContainer(this.scene, BARN_URL).catch(() => {
+      // Silently ignore preload failures; spawnBarnHouses will fall back to
+      // green boxes if the asset is unavailable at render time.
+    });
+  }
+
+  /**
+   * Synchronise the 3-D buildings for square `squareIndex`.
    *
-   *   houses = 0      → clear
-   *   houses = 1..4   → that many green house cubes
-   *   houses = 5      → one red hotel cube
+   *   houses = 0     → clear
+   *   houses = 1..4  → that many barn models (async, fallback to green box)
+   *   houses = 5     → one red hotel box (sync)
    */
   updateSquareBuildings(squareIndex: number, houses: number): void {
+    // Clear existing meshes synchronously so the board is never stale.
     this.clearSquareBuildings(squareIndex);
+
+    // Bump generation so any in-flight async from a previous call aborts.
+    const gen = (this.generations.get(squareIndex) ?? 0) + 1;
+    this.generations.set(squareIndex, gen);
+
     if (houses === 0) return;
 
     const t = this.transforms[squareIndex];
     if (!t) return;
 
-    const isHotel = houses === 5;
-    const count   = isHotel ? 1 : houses;
-    const meshes: Mesh[] = [];
-
-    for (let i = 0; i < count; i++) {
-      const mesh = this.spawnBuilding(squareIndex, i, t, isHotel, count);
-      meshes.push(mesh);
+    if (houses === 5) {
+      // ── Hotel: instant synchronous red box ──────────────────────────────
+      const mesh = this.spawnHotelBox(squareIndex, t);
+      this.buildingMeshes.set(squareIndex, [mesh]);
+    } else {
+      // ── Houses 1-4: async barn model ────────────────────────────────────
+      void this.spawnBarnHouses(squareIndex, houses, t, gen).catch(_err => {
+        // Barn load failed → fall back to green boxes for this square.
+        if (this.generations.get(squareIndex) === gen) {
+          this.spawnFallbackHouses(squareIndex, houses, t);
+        }
+      });
     }
-
-    this.buildingMeshes.set(squareIndex, meshes);
   }
 
-  /**
-   * Convenience overload that accepts a full Square object.
-   * Delegates to updateSquareBuildings.
-   */
+  /** Convenience overload that accepts a full Square object. */
   updateBuildings(square: Square): void {
     this.updateSquareBuildings(square.index, square.houses);
   }
 
-  /**
-   * Remove all building meshes for a single square and free GPU memory.
-   */
+  /** Remove all building meshes for a single square and free GPU memory. */
   clearSquareBuildings(squareIndex: number): void {
     const existing = this.buildingMeshes.get(squareIndex);
     if (existing) {
-      existing.forEach(m => m.dispose(false, true));
+      existing.forEach(m => {
+        // Recurse into children (pivot → barn instance nodes) but keep
+        // shared materials alive (the AssetContainer owns them).
+        m.dispose(false, false);
+      });
       this.buildingMeshes.delete(squareIndex);
     }
   }
 
-  /**
-   * Remove all building meshes from the entire board.
-   * Called by useGameEngine.stopGame() via `houseRenderer.clearAll()`.
-   */
+  /** Remove all building meshes from the entire board. */
   clearAll(): void {
-    this.buildingMeshes.forEach((_meshes, idx) => {
+    for (const idx of Array.from(this.buildingMeshes.keys())) {
       this.clearSquareBuildings(idx);
-    });
+    }
     this.buildingMeshes.clear();
+  }
+
+  /** Tear down all meshes and the shared hotel material. */
+  dispose(): void {
+    this.clearAll();
+    if (!isMaterialDead(_hotelMat)) {
+      _hotelMat!.dispose();
+      _hotelMat = null;
+    }
   }
 
   // ── Private helpers ───────────────────────────────────────────────────────
 
   /**
-   * Create a single house or hotel mesh, apply a shared material, and return
-   * it.  The mesh is *not* added to `buildingMeshes` here; the caller
-   * collects the returned mesh into a per-square array.
+   * Load `count` barn instances onto tile `t` for square `squareIndex`.
+   * Aborts silently when the generation counter has moved on (a newer
+   * `updateSquareBuildings` call was made while we were awaiting the asset).
    */
-  private spawnBuilding(
+  private async spawnBarnHouses(
     squareIndex: number,
-    idx:         number,
+    count:       number,
     t:           TileTransform,
-    isHotel:     boolean,
-    totalCount:  number,
-  ): Mesh {
-    const name = `building_${squareIndex}_${idx}`;
+    gen:         number,
+  ): Promise<void> {
+    const container = await getContainer(this.scene, BARN_URL);
 
-    const size   = isHotel ? HOTEL_SIZE   : HOUSE_SIZE;
-    const height = isHotel ? HOTEL_HEIGHT : HOUSE_HEIGHT;
+    // Abort if a newer update came in while we were loading.
+    if (this.generations.get(squareIndex) !== gen) return;
 
-    const mesh = MeshBuilder.CreateBox(
-      name,
-      { width: size, height, depth: size },
-      this.scene,
-    );
+    const pivots: Mesh[] = [];
 
-    const pos = buildingWorldPos(t, idx, totalCount, isHotel);
-    mesh.position.copyFrom(pos);
-    mesh.isPickable     = false;
-    mesh.receiveShadows = false;
+    for (let i = 0; i < count; i++) {
+      const pos = buildingSlotPos(t, i, count, BARN_SLOT_GAP);
 
-    mesh.material = isHotel
-      ? getHotelMaterial(this.scene)
-      : getHouseMaterial(this.scene);
+      // Invisible pivot — groups all nodes from one barn instance.
+      const pivot = new Mesh(`barn_pivot_${squareIndex}_${i}_g${gen}`, this.scene);
+      pivot.position.copyFrom(pos);
+      pivot.isPickable = false;
 
-    return mesh;
+      // Instantiate a fresh copy of the barn from the cached container.
+      const entries = container.instantiateModelsToScene(
+        name => `barn_${squareIndex}_${i}_g${gen}_${name}`,
+        true,
+      );
+
+      entries.animationGroups.forEach(ag => ag.stop());
+
+      // Parent every root node to the pivot and reset its local transform.
+      entries.rootNodes.forEach(node => {
+        node.parent = pivot;
+        node.position = Vector3.Zero();
+        node.rotation = Vector3.Zero();
+      });
+
+      // Scale the pivot so the barn fits on the tile.
+      pivot.scaling.setAll(BARN_SCALE);
+
+      pivots.push(pivot);
+    }
+
+    // Final stale check before committing.
+    if (this.generations.get(squareIndex) !== gen) {
+      pivots.forEach(p => p.dispose(false, false));
+      return;
+    }
+
+    this.buildingMeshes.set(squareIndex, pivots);
   }
 
   /**
-   * Release the shared materials.  Call this only when the entire renderer is
-   * torn down (i.e. from a scene-level dispose, not per-square updates).
+   * Synchronous fallback: render simple green boxes when the barn asset is
+   * unavailable (network error, CDN down, etc.).
    */
-  dispose(): void {
-    this.clearAll();
-    if (_houseMat && !isMaterialDead(_houseMat)) {
-      _houseMat.dispose();
-      _houseMat = null;
+  private spawnFallbackHouses(
+    squareIndex: number,
+    count:       number,
+    t:           TileTransform,
+  ): void {
+    const HOUSE_SIZE   = 0.4;
+    const HOUSE_HEIGHT = 0.5;
+
+    const mat = new StandardMaterial(`fallbackHouseMat_${squareIndex}`, this.scene);
+    mat.diffuseColor  = new Color3(0.05, 0.65, 0.05);
+    mat.emissiveColor = new Color3(0.00, 0.10, 0.00);
+
+    const meshes: Mesh[] = [];
+    for (let i = 0; i < count; i++) {
+      const pos = buildingSlotPos(t, i, count, BARN_SLOT_GAP);
+      const mesh = MeshBuilder.CreateBox(
+        `house_fallback_${squareIndex}_${i}`,
+        { width: HOUSE_SIZE, height: HOUSE_HEIGHT, depth: HOUSE_SIZE },
+        this.scene,
+      );
+      mesh.position.set(pos.x, TILE_SURFACE_Y + HOUSE_HEIGHT / 2, pos.z);
+      mesh.isPickable     = false;
+      mesh.receiveShadows = false;
+      mesh.material       = mat;
+      meshes.push(mesh);
     }
-    if (_hotelMat && !isMaterialDead(_hotelMat)) {
-      _hotelMat.dispose();
-      _hotelMat = null;
-    }
+    this.buildingMeshes.set(squareIndex, meshes);
+  }
+
+  /** Synchronous red hotel box (distinct from barn houses). */
+  private spawnHotelBox(squareIndex: number, t: TileTransform): Mesh {
+    const pos = buildingSlotPos(t, 0, 1, 0);
+    const mesh = MeshBuilder.CreateBox(
+      `hotel_${squareIndex}`,
+      { width: HOTEL_SIZE, height: HOTEL_HEIGHT, depth: HOTEL_SIZE },
+      this.scene,
+    );
+    mesh.position.set(pos.x, TILE_SURFACE_Y + HOTEL_HEIGHT / 2, pos.z);
+    mesh.isPickable = false;
+    mesh.material   = getHotelMaterial(this.scene);
+    return mesh;
   }
 }
