@@ -90,8 +90,10 @@ const CHARACTER_CONFIGS: CharacterConfig[] = [
   },
   // ── 1: AI player ───────────────────────────────────────────────────────────
   {
+    // Geometry in cm, Y[-22 → 44] = 66.8 cm visible mesh.
+    // 66.8 × 0.0165 ≈ 1.10 units.  (Overrides the baked 0.01 GLB root scale.)
     modelPath:    '/models/characters/Soldier.glb',
-    scale:        0.007,
+    scale:        0.0165,
     idleAnimName: 'Idle',
     walkAnimName: 'Walk',
     isVip:        false,
@@ -99,8 +101,10 @@ const CHARACTER_CONFIGS: CharacterConfig[] = [
   },
   // ── 2: AI player ───────────────────────────────────────────────────────────
   {
+    // Geometry in cm, Y[-0.1 → 78.9] = 79 cm.
+    // 79 × 0.014 ≈ 1.11 units.
     modelPath:    '/models/characters/Fox.glb',
-    scale:        5.0,
+    scale:        0.014,
     idleAnimName: 'Survey',
     walkAnimName: 'Walk',
     isVip:        false,
@@ -108,9 +112,10 @@ const CHARACTER_CONFIGS: CharacterConfig[] = [
   },
   // ── 3: AI player ───────────────────────────────────────────────────────────
   {
-    // Sketchfab export — scale may need adjustment after first visual test
+    // Sketchfab export, Y[-1.7 → 17.8] = 19.5 units.
+    // 19.5 × 0.056 ≈ 1.09 units.
     modelPath:    '/models/characters/character_2.glb',
-    scale:        1.0,
+    scale:        0.056,
     idleAnimName: 'IDLE',
     walkAnimName: 'walk',
     isVip:        false,
