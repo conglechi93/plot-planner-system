@@ -27,6 +27,7 @@ import {
   Color3,
   Mesh,
   Vector3,
+  TransformNode,
 } from '@babylonjs/core';
 import { getContainer } from '../../utils/containerCache';
 import { computeTileTransforms } from '../../game/board/tileLayout';
@@ -37,13 +38,8 @@ import type { Square } from '../../game/types';
 
 const BARN_URL = 'https://d1v3nro70bdf57.cloudfront.net/dev/shed/barn/barn-v3.babylon';
 
-/**
- * Uniform scale applied to each barn instance.
- * Tweak this value if the barn appears too large or too small on the board.
- * At 0.04 the barn sits at roughly the same visual scale as the old 0.4×0.5
- * box placeholder.
- */
-const BARN_SCALE = 0.04;
+/** Uniform scale applied to each barn instance. */
+const BARN_SCALE = 0.18;
 
 // ─── Hotel box constants (kept as-is) ─────────────────────────────────────────
 
@@ -94,7 +90,8 @@ function buildingSlotPos(
   totalCount:   number,
   spreadStep:   number,
 ): Vector3 {
-  const inwardDist = t.tileDepth * 0.20;
+  // 0.40 → 40% inward from tile centre toward board centre, clear of the card label
+  const inwardDist = t.tileDepth * 0.40;
   const totalSpan  = (totalCount - 1) * spreadStep;
   const offset     = buildingIdx * spreadStep - totalSpan / 2;
   const spreadAxis = buildingSpreadAxis(t);
@@ -173,8 +170,8 @@ export class HouseHotelRenderer {
       this.buildingMeshes.set(squareIndex, [mesh]);
     } else {
       // ── Houses 1-4: async barn model ────────────────────────────────────
-      void this.spawnBarnHouses(squareIndex, houses, t, gen).catch(_err => {
-        // Barn load failed → fall back to green boxes for this square.
+      void this.spawnBarnHouses(squareIndex, houses, t, gen).catch(err => {
+        console.warn('[HouseHotelRenderer] barn load failed, using fallback:', err);
         if (this.generations.get(squareIndex) === gen) {
           this.spawnFallbackHouses(squareIndex, houses, t);
         }
@@ -232,7 +229,6 @@ export class HouseHotelRenderer {
   ): Promise<void> {
     const container = await getContainer(this.scene, BARN_URL);
 
-    // Abort if a newer update came in while we were loading.
     if (this.generations.get(squareIndex) !== gen) return;
 
     const pivots: Mesh[] = [];
@@ -240,12 +236,10 @@ export class HouseHotelRenderer {
     for (let i = 0; i < count; i++) {
       const pos = buildingSlotPos(t, i, count, BARN_SLOT_GAP);
 
-      // Invisible pivot — groups all nodes from one barn instance.
       const pivot = new Mesh(`barn_pivot_${squareIndex}_${i}_g${gen}`, this.scene);
       pivot.position.copyFrom(pos);
       pivot.isPickable = false;
 
-      // Instantiate a fresh copy of the barn from the cached container.
       const entries = container.instantiateModelsToScene(
         name => `barn_${squareIndex}_${i}_g${gen}_${name}`,
         true,
@@ -253,20 +247,18 @@ export class HouseHotelRenderer {
 
       entries.animationGroups.forEach(ag => ag.stop());
 
-      // Parent every root node to the pivot and reset its local transform.
       entries.rootNodes.forEach(node => {
-        node.parent = pivot;
-        node.position = Vector3.Zero();
-        node.rotation = Vector3.Zero();
+        const tn = node as TransformNode;
+        tn.parent = pivot;
+        tn.position.set(0, 0, 0);
+        tn.rotation.set(0, 0, 0);
+        tn.rotationQuaternion = null;
       });
 
-      // Scale the pivot so the barn fits on the tile.
       pivot.scaling.setAll(BARN_SCALE);
-
       pivots.push(pivot);
     }
 
-    // Final stale check before committing.
     if (this.generations.get(squareIndex) !== gen) {
       pivots.forEach(p => p.dispose(false, false));
       return;
