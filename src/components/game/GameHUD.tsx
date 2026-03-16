@@ -130,12 +130,8 @@ export function GameHUD({ engine }: Props): React.JSX.Element {
       {/* ── Dice panel (bottom-centre) ── */}
       <DicePanel engine={engine} />
 
-      {/* ── Build panel (mid-right) ── */}
-      <BuildPanel
-        humanPlayer={humanPlayer}
-        squares={squares}
-        engine={engine}
-      />
+      {/* ── Build panel — tạm ẩn, nhà tự hiện khi mua BĐS ── */}
+      {/* <BuildPanel humanPlayer={humanPlayer} squares={squares} engine={engine} /> */}
 
       {/* ── Game log (bottom-right) ── */}
       <GameLog log={log} players={players} />

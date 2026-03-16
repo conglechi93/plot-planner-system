@@ -698,19 +698,19 @@ export function useGameEngine(): UseGameEngineReturn {
     }
 
     // House / hotel update ----------------------------------------------------
-    // Only call updateSquareBuildings when the house count on a square
-    // actually changes. Calling it on every state change would fire
-    // clearSquareBuildings() for every property on every AI move, cancelling
-    // any in-flight async barn model load before it ever renders.
+    // Render 1 barn on any owned property (ownership indicator), 0 when
+    // unowned. Only fire when ownership actually changes to avoid cancelling
+    // in-flight async barn model loads on unrelated state changes.
     const houseRenderer = houseRendererRef.current;
     if (houseRenderer) {
       const prev = prevHousesRef.current;
       state.squares.forEach(sq => {
         if (sq.type !== 'property') return;
-        const prevCount = prev.get(sq.index) ?? -1;
-        if (sq.houses !== prevCount) {
-          houseRenderer.updateSquareBuildings(sq.index, sq.houses);
-          prev.set(sq.index, sq.houses);
+        const renderCount = sq.ownerId !== null ? 1 : 0;
+        const prevCount   = prev.get(sq.index) ?? -1;
+        if (renderCount !== prevCount) {
+          houseRenderer.updateSquareBuildings(sq.index, renderCount);
+          prev.set(sq.index, renderCount);
         }
       });
     }
