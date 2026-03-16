@@ -129,6 +129,13 @@ export function useGameEngine(): UseGameEngineReturn {
   const tokenRendererRef = useRef<TokenRenderer | null>(null);
   const houseRendererRef = useRef<HouseHotelRenderer | null>(null);
   const diceAnimatorRef  = useRef<DiceAnimator | null>(null);
+  /**
+   * Tracks the last-rendered house count per square index.
+   * Lets the sync effect skip squares that haven't changed, preventing
+   * unnecessary clearSquareBuildings() calls that would cancel in-flight
+   * async barn model loads.
+   */
+  const prevHousesRef = useRef<Map<number, number>>(new Map());
   const aiTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   /**
@@ -263,6 +270,7 @@ export function useGameEngine(): UseGameEngineReturn {
     tokenRendererRef.current?.dispose();
     houseRendererRef.current?.clearAll();
     diceAnimatorRef.current?.dispose();
+    prevHousesRef.current.clear();
 
     boardRendererRef.current = null;
     tokenRendererRef.current = null;
@@ -690,11 +698,19 @@ export function useGameEngine(): UseGameEngineReturn {
     }
 
     // House / hotel update ----------------------------------------------------
+    // Only call updateSquareBuildings when the house count on a square
+    // actually changes. Calling it on every state change would fire
+    // clearSquareBuildings() for every property on every AI move, cancelling
+    // any in-flight async barn model load before it ever renders.
     const houseRenderer = houseRendererRef.current;
     if (houseRenderer) {
+      const prev = prevHousesRef.current;
       state.squares.forEach(sq => {
-        if (sq.type === 'property') {
+        if (sq.type !== 'property') return;
+        const prevCount = prev.get(sq.index) ?? -1;
+        if (sq.houses !== prevCount) {
           houseRenderer.updateSquareBuildings(sq.index, sq.houses);
+          prev.set(sq.index, sq.houses);
         }
       });
     }
