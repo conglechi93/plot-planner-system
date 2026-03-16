@@ -2,6 +2,15 @@
   "car": [
     "/models/car/bus.glb"
   ],
+  "characters": [
+    "/models/characters/Fox.glb",
+    "/models/characters/RobotExpressive.glb",
+    "/models/characters/Soldier.glb",
+    "/models/characters/character_1.glb",
+    "/models/characters/character_2.glb",
+    "/models/characters/character_4.glb",
+    "/models/characters/charactor_3.glb"
+  ],
   "common": [
     "/models/common/dice.glb"
   ],

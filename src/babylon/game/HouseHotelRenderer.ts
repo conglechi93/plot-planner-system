@@ -39,7 +39,7 @@ import type { Square } from '../../game/types';
 const BARN_URL = 'https://d1v3nro70bdf57.cloudfront.net/dev/shed/barn/barn-v3.babylon';
 
 /** Uniform scale applied to each barn instance. */
-const BARN_SCALE = 0.18;
+const BARN_SCALE = 0.25;
 
 // ─── Hotel box constants (kept as-is) ─────────────────────────────────────────
 
