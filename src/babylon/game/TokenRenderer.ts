@@ -58,11 +58,14 @@ interface CharacterConfig {
    * Scaling applied to the GLB root node so the character stands ~1.0–1.3
    * world-units tall on the board.
    *
-   * Quick calibration guide (open Babylon Sandbox, load the GLB, read height):
-   *   RobotExpressive : native ~1.7 m  → 0.65 × 1.7  = 1.10 units ✓
-   *   Soldier         : native ~175 cm  → 0.007 × 175 = 1.23 units ✓
-   *   Fox             : native ~0.21 m  → 5.0  × 0.21 = 1.05 units ✓
-   *   character_2     : unknown (Sketchfab export) — adjust scale as needed
+   * Scale strategy: scaleInPlace() MULTIPLIES the value on top of any
+   * baked GLB root scale (e.g. Soldier bakes 0.01 for cm→m conversion).
+   * Think of `scale` here as "factor on top of whatever the model ships with".
+   *
+   *   RobotExpressive : baked=1.0,  × 0.65  → visual ~1.1 units ✓
+   *   Soldier         : baked=0.01, × 0.65  → net 0.0065 → ~1.1 units ✓
+   *   Fox             : baked=1.0,  × 0.02  → visual ~1.6 units ✓
+   *   character_2     : baked=1.0,  × 0.10  → visual ~1.9 units (adjust if needed)
    */
   scale:         number;
   /** Animation-group name used while the token is standing still. */
@@ -90,10 +93,10 @@ const CHARACTER_CONFIGS: CharacterConfig[] = [
   },
   // ── 1: AI player ───────────────────────────────────────────────────────────
   {
-    // Geometry in cm, Y[-22 → 44] = 66.8 cm visible mesh.
-    // 66.8 × 0.0165 ≈ 1.10 units.  (Overrides the baked 0.01 GLB root scale.)
+    // Soldier bakes root scale [0.01] (cm→m). scaleInPlace(0.65) gives net
+    // 0.0065 → geometry ~175 cm × 0.0065 ≈ 1.14 units.
     modelPath:    '/models/characters/Soldier.glb',
-    scale:        0.0165,
+    scale:        0.65,
     idleAnimName: 'Idle',
     walkAnimName: 'Walk',
     isVip:        false,
@@ -101,10 +104,10 @@ const CHARACTER_CONFIGS: CharacterConfig[] = [
   },
   // ── 2: AI player ───────────────────────────────────────────────────────────
   {
-    // Geometry in cm, Y[-0.1 → 78.9] = 79 cm.
-    // 79 × 0.014 ≈ 1.11 units.
+    // Fox baked scale = 1.0. geometry Y ≈ 79 cm.
+    // 1.0 × 0.02 → 79 × 0.02 ≈ 1.58 units.
     modelPath:    '/models/characters/Fox.glb',
-    scale:        0.014,
+    scale:        0.02,
     idleAnimName: 'Survey',
     walkAnimName: 'Walk',
     isVip:        false,
@@ -112,10 +115,10 @@ const CHARACTER_CONFIGS: CharacterConfig[] = [
   },
   // ── 3: AI player ───────────────────────────────────────────────────────────
   {
-    // Sketchfab export, Y[-1.7 → 17.8] = 19.5 units.
-    // 19.5 × 0.056 ≈ 1.09 units.
+    // character_2 baked scale = 1.0. geometry Y ≈ 19.5 units.
+    // 1.0 × 0.10 → 19.5 × 0.10 ≈ 1.95 units. Tune down if too tall.
     modelPath:    '/models/characters/character_2.glb',
-    scale:        0.056,
+    scale:        0.10,
     idleAnimName: 'IDLE',
     walkAnimName: 'walk',
     isVip:        false,
@@ -342,9 +345,11 @@ export class TokenRenderer {
         const modelRoot = inst.rootNodes[0] as TransformNode | undefined;
         if (!modelRoot) throw new Error('No root node in GLB');
 
-        // Attach model under tokenRoot, apply per-character scale
+        // Attach model under tokenRoot, multiply scale on top of any
+        // baked-in GLB root scale (e.g. Soldier has 0.01 cm→m baked in).
+        // scaleInPlace() preserves the existing value instead of overriding it.
         modelRoot.parent = tokenRoot;
-        modelRoot.scaling.setAll(config.scale);
+        modelRoot.scaling.scaleInPlace(config.scale);
 
         // ── Animations ─────────────────────────────────────────────────────
         record.idleAnim = findAnim(inst.animationGroups, config.idleAnimName);
