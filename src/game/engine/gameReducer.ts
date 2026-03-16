@@ -482,6 +482,15 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
       if (pending?.type !== 'card_drawn') return state;
 
       const { card } = pending;
+
+      // Snapshot position BEFORE applying so we can detect whether the card
+      // actually moved the player.  Non-movement cards (collect_money, pay_money,
+      // get_out_of_jail_free, …) leave the player on the same square.  Without
+      // this check the chaining logic below would re-draw endlessly: player
+      // stays on community_chest → APPLY_CARD sees "card square" → draws again
+      // → stays → draws again → infinite loop.
+      const positionBefore = state.players[state.currentPlayerIndex].position;
+
       let newState = applyCard(card, { ...state, pendingAction: null });
 
       const updatedPlayer = newState.players[state.currentPlayerIndex];
@@ -496,10 +505,13 @@ export function gameReducer(state: GameState, event: GameEvent): GameState {
 
       const landedSquare = newState.squares[updatedPlayer.position];
 
-      // Chain into another card draw if landed on a card square
+      // Chain into ANOTHER card draw only when the card physically moved the
+      // player to a different card square (e.g. "Advance to nearest Railroad"
+      // lands on a Chance square).  If position did not change the player is
+      // still standing on the square they originally drew from — do NOT redraw.
       if (
-        landedSquare.type === 'chance' ||
-        landedSquare.type === 'community_chest'
+        updatedPlayer.position !== positionBefore &&
+        (landedSquare.type === 'chance' || landedSquare.type === 'community_chest')
       ) {
         return drawCard(landedSquare.type, newState);
       }
