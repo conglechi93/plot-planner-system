@@ -59,14 +59,9 @@ export function createPointerHandlers(deps: PointerHandlerDeps) {
       return;
     }
 
-    // ── Ground click: di chuyển model đang chọn ──
+    // ── Ground click: bỏ chọn (không di chuyển vật) ──
     if (pick.pickedMesh === ground) {
-      const selected = selectionSystem.getSelected();
-      if (selected && pick.pickedPoint) {
-        transformSystem.moveHouse(selected, pick.pickedPoint);
-      } else {
-        selectionSystem.select(null);
-      }
+      selectionSystem.select(null);
       return;
     }
 
