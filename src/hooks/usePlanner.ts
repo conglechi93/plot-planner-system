@@ -8,6 +8,7 @@ import type { ModelEntry } from '../types/ModelEntry';
 import { toDegrees, toRadians } from '../utils/math';
 import { useInspector } from './useInspector';
 import { createPointerHandlers, createKeyboardHandler } from './plannerEventHandlers';
+import { snapshotUVForHouse, recomputeUVForHouse, clearUVSnapshot } from '../babylon/interactions/uvScaler';
 
 export type GizmoMode = 'position' | 'rotation' | 'scale' | null;
 
@@ -46,6 +47,8 @@ export function usePlanner(
   const housesRef     = useRef<Map<string, HouseInstance>>(new Map());
   /** Tracks game-mode flag without re-render; read in pointer-event closure. */
   const gameModeActiveRef = useRef(options.gameModeActive ?? false);
+  /** Đảm bảo chỉ đăng ký observer cho scale gizmo một lần duy nhất */
+  const scaleObserverRef  = useRef(false);
 
   // Keep latest callback in a ref to avoid stale closures in effects
   const onSelectChangeRef = useRef(options.onSelectChange);
@@ -159,6 +162,7 @@ export function usePlanner(
         });
 
         housesRef.current.set(instance.id, instance);
+        snapshotUVForHouse(instance);  // Snapshot UV trước khi user thao tác scale
       }
 
       setHouseCount(housesRef.current.size);
@@ -179,6 +183,24 @@ export function usePlanner(
     gizmoManager.scaleGizmoEnabled        = mode === 'scale';
     gizmoManager.boundingBoxGizmoEnabled  = false;
     setGizmoModeState(mode);
+
+    // ── Hook scale gizmo drag-end để recompute UV (chỉ đăng ký 1 lần) ──
+    // gizmos.scaleGizmo được tạo lazy lần đầu tiên scaleGizmoEnabled = true,
+    // sau đó tồn tại suốt vòng đời GizmoManager.
+    if (mode === 'scale' && !scaleObserverRef.current) {
+      const sg = gizmoManager.gizmos.scaleGizmo;
+      if (sg) {
+        const onDragEnd = () => {
+          const sel = selectionSystem.getSelected();
+          if (sel) recomputeUVForHouse(sel);
+        };
+        sg.xGizmo.dragBehavior.onDragEndObservable.add(onDragEnd);
+        sg.yGizmo.dragBehavior.onDragEndObservable.add(onDragEnd);
+        sg.zGizmo.dragBehavior.onDragEndObservable.add(onDragEnd);
+        sg.uniformScaleGizmo.dragBehavior.onDragEndObservable.add(onDragEnd);
+        scaleObserverRef.current = true;
+      }
+    }
 
     // Re-attach to currently selected mesh
     const selected = selectionSystem.getSelected();
@@ -206,6 +228,8 @@ export function usePlanner(
       [house.mesh, ...house.mesh.getChildMeshes()].forEach((m) => {
         shadowGen.addShadowCaster(m);
       });
+      // Snapshot UV ngay sau khi đặt, trước khi user scale
+      snapshotUVForHouse(house);
       setIsPlacing(false);
       setHouseCount(housesRef.current.size);
       setStatus(`House placed! Total: ${housesRef.current.size}. Click a house to select it.`);
@@ -213,6 +237,7 @@ export function usePlanner(
 
     transformSystem.onDelete((id) => {
       housesRef.current.delete(id);
+      clearUVSnapshot(id);          // Dọn snapshot tránh memory leak
       selectionSystem.select(null);
       gizmoManager.attachToMesh(null);
       setHouseCount(housesRef.current.size);

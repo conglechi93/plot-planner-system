@@ -25,7 +25,6 @@ export function createPointerHandlers(deps: PointerHandlerDeps) {
     ground,
     placementSystem,
     selectionSystem,
-    transformSystem,
     gizmoManager,
     housesRef,
     gameModeActiveRef,
